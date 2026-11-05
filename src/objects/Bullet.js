@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { toTint } from './utils/bulletUtils';
+import { integrateOverAge, toTint } from './utils/bulletUtils';
 import { bulletBehaviors } from './definitions/bulletBehaviors';
 
 export default class Bullet extends Phaser.Physics.Arcade.Sprite {
@@ -8,7 +8,8 @@ export default class Bullet extends Phaser.Physics.Arcade.Sprite {
      * Leave it undefined to draw the texture untinted.
      * size: display height in px (width keeps the texture's aspect ratio), or size(age, bullet)
      * evaluated every frame. The hitbox scales with it.
-     * behavior.spinVelocity: rad/s the sprite rotates about its own center (any behavior type).
+     * behavior.spinVelocity: rad/s the sprite rotates about its own center (any behavior type),
+     * or spinVelocity(age), integrated over the bullet's life.
      */
     constructor(scene, {
         origin,
@@ -36,7 +37,9 @@ export default class Bullet extends Phaser.Physics.Arcade.Sprite {
             velocityVector: behavior.velocityVector ?? {x: 0, y: 0},
             orbitAngle: behavior.startAngle ?? 0,
             orbitRadius: behavior.startRadius ?? 0,
-            radiusIntegral: {steps: 0, distance: 0}
+            radiusIntegral: {steps: 0, distance: 0},
+            angleIntegral: {steps: 0, distance: 0},
+            spinIntegral: {steps: 0, distance: 0}
         }
 
         scene.add.existing(this);
@@ -65,7 +68,9 @@ export default class Bullet extends Phaser.Physics.Arcade.Sprite {
 
     applySpin(age) {
         const {spinVelocity = 0, startRotation = 0} = this.behavior;
-        if (spinVelocity) {
+        if (typeof spinVelocity === 'function') {
+            this.rotation = startRotation + integrateOverAge((a) => Number(spinVelocity(a)) || 0, age, this.state.spinIntegral);
+        } else if (spinVelocity) {
             this.rotation = startRotation + spinVelocity * age;
         }
     }
@@ -79,8 +84,11 @@ export default class Bullet extends Phaser.Physics.Arcade.Sprite {
         }
     }
 
-    update() {
-        // Bullet removal logic
+    /**
+     * Culls the bullet once it's far out of bounds, then moves it. Returns false if destroyed.
+     * Doesn't touch size, color or spin, so it's cheap enough for fast-forwarding.
+     */
+    advance(age = this.getAge()) {
         const bounds = this.scene.physics.world.bounds;
         const horizontalMargin = bounds.width * 2;
         const verticalMargin = bounds.height * 2;
@@ -91,11 +99,22 @@ export default class Bullet extends Phaser.Physics.Arcade.Sprite {
             this.y > bounds.bottom + verticalMargin
         ) {
             this.destroy();
-            return;
+            return false;
         }
 
-        const age = this.getAge();
         bulletBehaviors[this.behavior.type] && bulletBehaviors[this.behavior.type](age, this);
+
+        if (this.followParent) {
+            this.x = this.parent.x;
+        }
+        return true;
+    }
+
+    update() {
+        const age = this.getAge();
+        if (!this.advance(age)) {
+            return;
+        }
         this.applySpin(age);
 
         if (typeof this.size === 'function') {
@@ -104,10 +123,6 @@ export default class Bullet extends Phaser.Physics.Arcade.Sprite {
 
         if (typeof this.color === 'function') {
             this.applyColor(age);
-        }
-
-        if (this.followParent) {
-            this.x = this.parent.x;
         }
     }
 }

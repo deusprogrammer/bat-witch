@@ -4,21 +4,28 @@ import BulletEmitter from '../objects/BulletEmitter.js';
 import { preloadBulletTextures } from '../objects/definitions/bulletTextures.js';
 
 const MAX_FRAME_DELTA = 100;
+// Audio drifting further than this from the timeline (e.g. after a seek) is restarted in place.
+const AUDIO_RESYNC_MS = 50;
+const REBUILD_STEP = 500;
 
 /**
  * Bullet positions are pure functions of settings and timeline time, so any moment can be
  * reconstructed by re-emitting every wave scheduled up to that time. Playing forward only
  * emits the waves that fall inside each frame; seeking backward or changing settings rebuilds.
+ * When a track is loaded, timeline time is song time and playback follows the audio clock.
  */
 export default class PlaygroundScene extends Phaser.Scene {
-  constructor({ settings, timeline, onTimelineUpdate }) {
+  constructor({ settings, timeline, audio, onTimelineUpdate }) {
     super({ key: 'PlaygroundScene' });
 
     this.settings = settings;
     this.timeline = timeline;
+    this.audio = audio;
     this.onTimelineUpdate = onTimelineUpdate;
     this.timelineClock = { now: 0 };
     this.manualVolleys = [];
+    this.volleySchedules = new Map();
+    this.maxVolleySpan = 0;
     this.pendingSeek = null;
     this.dirty = true;
   }
@@ -71,7 +78,7 @@ export default class PlaygroundScene extends Phaser.Scene {
     const time = this.currentTime;
     this.manualVolleys.push(time);
 
-    for (const { waveIndex, delay } of this.emitter.getWaveSchedule()) {
+    for (const { waveIndex, delay } of this.scheduleFor(time)) {
       if (delay === 0) this.emitter.emitWave(waveIndex, time);
     }
     this.updateBullets();
@@ -88,7 +95,12 @@ export default class PlaygroundScene extends Phaser.Scene {
 
     let target = this.currentTime;
     if (this.timeline.playing) {
-      target += Math.min(delta, MAX_FRAME_DELTA);
+      const audio = this.audio;
+      if (audio?.loaded && audio.playing && audio.running) {
+        target = audio.position;
+      } else {
+        target += Math.min(delta, MAX_FRAME_DELTA);
+      }
 
       if (target >= this.timeline.duration) {
         if (this.timeline.loop) {
@@ -106,9 +118,21 @@ export default class PlaygroundScene extends Phaser.Scene {
     }
 
     this.moveTo(target);
+    this.syncAudio();
 
     this.bulletCountText.setText(`Bullets: ${this.emitter.bullets.countActive()}`);
     this.onTimelineUpdate?.(this.currentTime);
+  }
+
+  syncAudio() {
+    const audio = this.audio;
+    if (!audio?.loaded) return;
+
+    if (!this.timeline.playing || this.currentTime >= audio.duration) {
+      audio.stop();
+    } else if (!audio.playing || Math.abs(audio.position - this.currentTime) > AUDIO_RESYNC_MS) {
+      audio.play(this.currentTime);
+    }
   }
 
   applySettings() {
@@ -129,18 +153,48 @@ export default class PlaygroundScene extends Phaser.Scene {
 
   rebuild(target) {
     this.emitter.bullets.clear(true, true);
-    this.timelineClock.now = target;
-    this.emitBetween(-Infinity, target);
+    this.volleySchedules.clear();
+    this.maxVolleySpan = 0;
+
+    // Fast-forward in chunks so bullets that leave the field are culled along the way, as they
+    // would be during playback, instead of every bullet ever fired being integrated to `target`.
+    let from = -Infinity;
+    for (let time = Math.min(target, REBUILD_STEP); ; time = Math.min(target, time + REBUILD_STEP)) {
+      this.timelineClock.now = time;
+      this.emitBetween(from, time);
+      from = time;
+      if (time >= target) break;
+      this.advanceBullets();
+    }
     this.dirty = false;
+  }
+
+  /** Moves and culls bullets without updating their visuals (used while fast-forwarding). */
+  advanceBullets() {
+    for (const bullet of [...this.emitter.bullets.getChildren()]) {
+      bullet.advance();
+    }
+  }
+
+  /**
+   * waveInterval may depend on song time, so each volley has its own schedule. Every volley up
+   * to the current time has been scheduled (rebuild starts from -Infinity), so the longest
+   * cached span is a safe look-back for waves that are still pending.
+   */
+  scheduleFor(volleyTime) {
+    let schedule = this.volleySchedules.get(volleyTime);
+    if (!schedule) {
+      schedule = this.emitter.getWaveSchedule(volleyTime);
+      this.volleySchedules.set(volleyTime, schedule);
+      this.maxVolleySpan = Math.max(this.maxVolleySpan, schedule[schedule.length - 1].delay);
+    }
+    return schedule;
   }
 
   /** Emits every wave whose spawn time is in (from, to]. */
   emitBetween(from, to) {
-    const schedule = this.emitter.getWaveSchedule();
-    const volleySpan = schedule[schedule.length - 1].delay;
-
-    for (const volleyTime of this.volleysBetween(from - volleySpan, to)) {
-      for (const { waveIndex, delay } of schedule) {
+    for (const volleyTime of this.volleysBetween(from - this.maxVolleySpan, to)) {
+      for (const { waveIndex, delay } of this.scheduleFor(volleyTime)) {
         const spawnTime = volleyTime + delay;
         if (spawnTime > from && spawnTime <= to) {
           this.emitter.emitWave(waveIndex, spawnTime);
