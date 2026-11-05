@@ -18,8 +18,8 @@ export const calculateBurstSpacing = (projectilesPerWave) => {
 }
 
 /**
- * Creates the context object handed to one bullet's parameter functions, plus `at(age)`, which
- * updates it for a moment in the bullet's life and returns it.
+ * Creates the context object handed to one bullet's parameter functions, and returns `at(age)`,
+ * which updates it for a moment in the bullet's life and returns it.
  *
  * The same object is reused for every call (velocity, spin, color and size are evaluated every
  * integration step for every bullet, so allocating a fresh object each time would be costly).
@@ -39,43 +39,51 @@ const createBulletContext = ({ waveIndex, bulletIndex, bulletCount, spawnSeconds
         context.time = spawnSeconds + age;
         return context;
     };
-    return { context, at };
+    return { at };
 };
+
+/**
+ * For rates (velocities): a function becomes rate(age), a number stays a number.
+ * Behaviors only integrate functions, so constant rates keep the cheap `rate * age` path.
+ */
+const rateOverAge = (rate, at) => typeof rate === 'function'
+    ? (age) => Number(rate(at(age))) || 0
+    : Number(rate) || 0;
+
+/**
+ * For looks (color, size): a function becomes value(age); anything else passes through
+ * unchanged, since colors can also be strings like '#ff8800' or {r, g, b}.
+ */
+const valueOverAge = (value, at) => typeof value === 'function'
+    ? (age) => value(at(age))
+    : value;
 
 /**
  * Turns the emitter's parameters into functions of the bullet's age for the 'orbit' behavior
  * (definitions/bulletBehaviors.js), which integrates them over the bullet's life.
- * Plain numbers stay numbers so constant patterns skip integration entirely.
  */
-const orbitBehavior = (bulletEmitter, { at }, { rotates }) => {
+const orbitBehavior = (bulletEmitter, at, { rotates }) => {
     const { velocity, outwardVelocity, angularVelocity, spinVelocity } = bulletEmitter;
-    const velocityAt = typeof velocity === 'function'
-        ? (age) => Number(velocity(at(age))) || 0
-        : () => Number(velocity) || 0;
 
-    let outward;
+    // outwardVelocity replaces velocity, but can read it as context.velocity.
+    let outward = rateOverAge(velocity, at);
     if (typeof outwardVelocity === 'function') {
+        const resolveVelocity = typeof velocity === 'function'
+            ? (context) => Number(velocity(context)) || 0
+            : () => Number(velocity) || 0;
         outward = (age) => {
-            const current = at(age);
-            current.velocity = typeof velocity === 'function' ? Number(velocity(current)) || 0 : Number(velocity) || 0;
-            return outwardVelocity(current);
+            const context = at(age);
+            context.velocity = resolveVelocity(context);
+            return Number(outwardVelocity(context)) || 0;
         };
-    } else if (typeof velocity === 'function') {
-        outward = velocityAt;
-    } else {
-        outward = velocityAt();
     }
-
-    const perFrame = (fn) => typeof fn === 'function'
-        ? (age) => fn(at(age))
-        : Number(fn) || 0;
 
     return {
         type: 'orbit',
         outwardVelocity: outward,
         // Non-rotating patterns (burst, linear) fly straight out.
-        angularVelocity: rotates ? perFrame(angularVelocity) : 0,
-        spinVelocity: perFrame(spinVelocity)
+        angularVelocity: rotates ? rateOverAge(angularVelocity, at) : 0,
+        spinVelocity: rateOverAge(spinVelocity, at)
     };
 };
 
@@ -85,11 +93,7 @@ const orbitBehavior = (bulletEmitter, { at }, { rotates }) => {
  */
 export const spawnBullet = (bulletEmitter, { waveIndex, spawnTime }, { bulletIndex, bulletCount, baseAngle, rotates }) => {
     const spawnSeconds = spawnTime / 1000;
-    const bulletContext = createBulletContext({ waveIndex, bulletIndex, bulletCount, spawnSeconds });
-    const { at } = bulletContext;
-    const { color, size } = bulletEmitter;
-    // Color and size are evaluated by the Bullet every frame with its current age.
-    const perFrame = (fn) => typeof fn === 'function' ? (age) => fn(at(age)) : fn;
+    const { at } = createBulletContext({ waveIndex, bulletIndex, bulletCount, spawnSeconds });
 
     // texture and startAngle are decided once, at spawn (age 0).
     const texture = resolveValue(bulletEmitter.texture, at(0));
@@ -102,10 +106,11 @@ export const spawnBullet = (bulletEmitter, { waveIndex, spawnTime }, { bulletInd
         timeSource: bulletEmitter.timeSource,
         spawnTime,
         texture,
-        color: perFrame(color),
-        size: perFrame(size),
+        // The Bullet re-evaluates these every frame with its current age.
+        color: valueOverAge(bulletEmitter.color, at),
+        size: valueOverAge(bulletEmitter.size, at),
         behavior: {
-            ...orbitBehavior(bulletEmitter, bulletContext, { rotates }),
+            ...orbitBehavior(bulletEmitter, at, { rotates }),
             startAngle
         }
     });
