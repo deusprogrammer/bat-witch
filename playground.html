@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bullet Emitter Playground</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        min-height: 100%;
+        background: #000;
+        color: #d8e2f0;
+        font-family: system-ui, sans-serif;
+      }
+
+      body {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 24px;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+
+      #game canvas {
+        display: block;
+      }
+
+      aside {
+        box-sizing: border-box;
+        flex: 0 1 auto;
+        width: clamp(260px, 30vw, 480px);
+        min-width: 260px;
+        max-height: calc(100vh - 48px);
+        max-height: calc(100dvh - 48px);
+        overflow-y: auto;
+        scrollbar-color: #343d63 transparent;
+        scrollbar-gutter: stable;
+        position: sticky;
+        top: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 16px;
+        background: #11152a;
+        border: 1px solid #262d4d;
+        border-radius: 8px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .control {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 13px;
+      }
+
+      .control.disabled {
+        opacity: 0.4;
+      }
+
+      #numeric-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .control input[type='text'] {
+        box-sizing: border-box;
+        width: 100%;
+        font-family: monospace;
+      }
+
+      input,
+      select,
+      button {
+        font: inherit;
+        color: inherit;
+        background: #0a0d1c;
+        border: 1px solid #343d63;
+        border-radius: 4px;
+        padding: 4px 6px;
+      }
+
+      input.invalid {
+        border-color: #ff5c7a;
+      }
+
+      .hint,
+      .error {
+        font-size: 12px;
+        color: #8090b0;
+      }
+
+      .error {
+        color: #ff5c7a;
+      }
+
+      .error:empty {
+        display: none;
+      }
+
+      .checkbox {
+        flex-direction: row;
+        align-items: center;
+      }
+
+      .buttons {
+        display: flex;
+        gap: 8px;
+      }
+
+      button {
+        flex: 1;
+        padding: 8px;
+        cursor: pointer;
+        background: #23305f;
+      }
+
+      button:hover:not(:disabled) {
+        background: #30407a;
+      }
+
+      button:disabled {
+        cursor: default;
+        opacity: 0.45;
+      }
+
+      .preview {
+        --timeline-height: 46px;
+        flex: 0 1 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        /* Fit the 540x720 canvas plus the timeline inside the viewport. */
+        width: min(540px, calc((100dvh - 48px - 8px - var(--timeline-height)) * 0.75));
+        min-width: 240px;
+        position: sticky;
+        top: 24px;
+      }
+
+      #game {
+        aspect-ratio: 540 / 720;
+      }
+
+      .timeline {
+        box-sizing: border-box;
+        height: var(--timeline-height);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 8px;
+        font-size: 13px;
+        background: #11152a;
+        border: 1px solid #262d4d;
+        border-radius: 8px;
+      }
+
+      .timeline button {
+        flex: 0 0 auto;
+        width: 34px;
+        padding: 4px 0;
+      }
+
+      #scrubber {
+        flex: 1;
+        min-width: 40px;
+        padding: 0;
+        accent-color: #6f8cff;
+      }
+
+      #time-readout {
+        font-family: monospace;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .timeline-option {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+      }
+
+      #timeline-length {
+        width: 40px;
+      }
+
+      .presets {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid #262d4d;
+      }
+
+      #preset-status:empty {
+        display: none;
+      }
+
+      #preset-status.error-text,
+      #export-status.error-text {
+        color: #ff5c7a;
+      }
+
+      .export {
+        padding-bottom: 14px;
+        border-bottom: 1px solid #262d4d;
+      }
+
+      .settings {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .export summary {
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .export[open] summary {
+        margin-bottom: 10px;
+      }
+
+      .export > :not(summary) + :not(summary) {
+        margin-top: 10px;
+      }
+
+      .export-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: 10px;
+        align-items: end;
+      }
+
+      .export-grid input {
+        box-sizing: border-box;
+        width: 100%;
+      }
+
+      #export-progress {
+        width: 100%;
+        accent-color: #6f8cff;
+      }
+
+      #export-status:empty {
+        display: none;
+      }
+
+      body.exporting .lock-during-export {
+        opacity: 0.5;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="preview">
+      <div id="game"></div>
+      <div class="timeline lock-during-export">
+        <button id="play-pause" type="button" aria-pressed="true" aria-label="Pause" title="Pause">❚❚</button>
+        <input id="scrubber" type="range" min="0" max="20000" step="1" value="0" aria-label="Timeline position" />
+        <span id="time-readout">0.00s / 20.00s</span>
+        <label class="timeline-option" title="Timeline length in seconds">
+          <input id="timeline-length" type="number" min="1" max="600" step="1" aria-label="Timeline length in seconds" />
+          <span>s</span>
+        </label>
+        <label class="timeline-option">
+          <input id="timeline-loop" type="checkbox" />
+          <span>Loop</span>
+        </label>
+      </div>
+    </main>
+    <aside>
+      <h1>Bullet Emitter Playground</h1>
+
+      <section class="presets lock-during-export">
+        <label class="control">
+          <span>Preset</span>
+          <select id="preset"></select>
+        </label>
+        <label class="control">
+          <span>Preset name</span>
+          <input id="preset-name" type="text" spellcheck="false" placeholder="My pattern" />
+        </label>
+        <div class="buttons">
+          <button id="save-preset" type="button">Save</button>
+          <button id="delete-preset" type="button">Delete</button>
+          <button id="copy-json" type="button">Copy JSON</button>
+        </div>
+        <span id="preset-status" class="hint" role="status"></span>
+      </section>
+
+      <details class="export">
+        <summary>Export video</summary>
+        <div class="export-grid">
+          <label class="control">
+            <span>Format</span>
+            <select id="export-format">
+              <option value="mp4">MP4 (H.264)</option>
+              <option value="gif">GIF</option>
+            </select>
+          </label>
+          <label class="control">
+            <span>Frame rate</span>
+            <select id="export-fps">
+              <option value="15">15 fps</option>
+              <option value="20">20 fps</option>
+              <option value="30">30 fps</option>
+              <option value="60">60 fps</option>
+            </select>
+          </label>
+          <label class="control">
+            <span>Start (s)</span>
+            <input id="export-start" type="number" min="0" step="0.1" value="0" />
+          </label>
+          <label class="control">
+            <span>End (s)</span>
+            <input id="export-end" type="number" min="0.1" step="0.1" />
+          </label>
+          <label class="control">
+            <span>Size</span>
+            <select id="export-scale">
+              <option value="1">100%</option>
+              <option value="0.75">75%</option>
+              <option value="0.5">50%</option>
+              <option value="0.25">25%</option>
+            </select>
+          </label>
+          <span id="export-size" class="hint"></span>
+        </div>
+        <progress id="export-progress" max="1" value="0" hidden></progress>
+        <div class="buttons">
+          <button id="export-start-button" type="button">Export</button>
+          <button id="export-cancel" type="button" hidden>Cancel</button>
+        </div>
+        <span id="export-status" class="hint" role="status"></span>
+      </details>
+
+      <div class="settings lock-during-export">
+        <label class="control">
+          <span>Pattern</span>
+          <select id="pattern">
+            <option value="orbit_burst">orbit_burst</option>
+            <option value="burst">burst</option>
+            <option value="linear">linear</option>
+          </select>
+        </label>
+
+        <label class="control">
+          <span>Texture</span>
+          <select id="texture"></select>
+        </label>
+
+        <div id="numeric-controls"></div>
+
+        <label class="control checkbox">
+          <input id="auto-fire" type="checkbox" />
+          <span>Auto fire</span>
+        </label>
+
+        <div class="buttons">
+          <button id="fire" type="button">Fire now</button>
+          <button id="reset" type="button" title="Remove manually fired volleys and rewind to 0">Reset</button>
+        </div>
+      </div>
+    </aside>
+    <script type="module" src="/src/playground.js"></script>
+  </body>
+</html>

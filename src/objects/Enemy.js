@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import BulletEmitter from './BulletEmitter';
 
-const BULLET_COOLDOWN = 250;
+const WAVE_COOLDOWN = 5000;
 const BURST_VELOCITY = 100;
 
 export default class Enemy extends Phaser.Physics.Arcade.Sprite {
@@ -17,12 +17,15 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.createAnimations();
     this.play('enemy-forward');
 
-    this.lastBullet = null;
+    this.lastWave = null;
 
     this.bulletEmitter = new BulletEmitter(scene, {
       origin: this,
       velocity: BURST_VELOCITY,
-      projectilesPerWave: 90
+      waveCount: 20,
+      waveInterval: (i) => 200 + Math.sin(i * 0.8) * 150,
+      projectilesPerWave: 90,
+      pattern: 'orbit_burst'
     });
   }
 
@@ -47,9 +50,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   update(time) {
-    if (time - this.lastBullet >= BULLET_COOLDOWN) {
+    if (time - this.lastWave >= WAVE_COOLDOWN) {
       this.bulletEmitter.activate();
-      this.lastBullet = time;
+      this.lastWave = time;
     }
   }
 }

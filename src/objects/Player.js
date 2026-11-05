@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import Bullet from './Bullet';
+import BulletEmitter from './BulletEmitter';
 
 const BULLET_COOLDOWN = 1;
 const BULLET_VELOCITY = 1500;
@@ -23,6 +23,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     this.bullets = scene.physics.add.group({
         runChildUpdate: true
     });
+    this.bulletEmitter = new BulletEmitter(scene, {
+      origin: this,
+      velocity: -BULLET_VELOCITY,
+      pattern: 'linear',
+      followParent: true
+    });    
     this.play('player-forward');
   }
 
@@ -83,12 +89,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   fireMainWeapon() {
-    const bullet1 = new Bullet(this.scene, {
-      origin: { x: this.x, y: this.y - 32 },
-      parent: this,
-      followParent: true
-    });
-    this.bullets.add(bullet1);
-    bullet1.setVelocity(0, -BULLET_VELOCITY);
+    this.bulletEmitter.activate();
   }
 }

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import Player from '../objects/Player.js';
 import Enemy from '../objects/Enemy.js';
 import EnemyBullet from '../objects/EnemyBullet.js';
+import { preloadBulletTextures } from '../objects/definitions/bulletTextures.js';
 
 export default class GameScene extends Phaser.Scene {
   constructor() {
@@ -15,7 +16,7 @@ export default class GameScene extends Phaser.Scene {
   preload() {
     this.load.atlas('player', 'assets/player-sprite.png', 'assets/player-atlas.json');
     this.load.atlas('enemy', 'assets/enemy-sprite.png', 'assets/enemy-atlas.json');
-    this.load.image('bullet', 'assets/bullet.png');
+    preloadBulletTextures(this);
   }
 
   create() {
