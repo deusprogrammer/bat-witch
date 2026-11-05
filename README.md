@@ -185,7 +185,7 @@ src/
   objects/
     Bullet.js                   one projectile: movement, spin, size, color
     BulletEmitter.js            fires waves of bullets; documents every option
-    Enemy.js, Player.js, EnemyBullet.js
+    Enemy.js, Player.js
     definitions/
       bulletEmitters.js         patterns: orbit_burst, burst, linear
       bulletBehaviors.js        movement: orbit (polar motion around the origin)

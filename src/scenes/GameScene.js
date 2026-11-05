@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import Player from '../objects/Player.js';
 import Enemy from '../objects/Enemy.js';
-import EnemyBullet from '../objects/EnemyBullet.js';
 import { preloadBulletTextures } from '../objects/definitions/bulletTextures.js';
 
 export default class GameScene extends Phaser.Scene {
@@ -10,7 +9,6 @@ export default class GameScene extends Phaser.Scene {
 
     this.player = null;
     this.enemies = null;
-    this.enemyBullets = null;
   }
 
   preload() {
@@ -23,15 +21,8 @@ export default class GameScene extends Phaser.Scene {
     this.player = new Player(this, this.scale.width / 2, this.scale.height - 80);
 
     this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: true });
-    this.enemyBullets = this.physics.add.group({
-      classType: EnemyBullet,
-      runChildUpdate: true,
-      maxSize: 500,
-    });
-
     this.enemies.add(new Enemy(this, this.scale.width / 2, 50));
 
-    this.physics.add.overlap(this.player, this.enemyBullets, this.onPlayerHit, null, this);
     this.physics.add.overlap(this.player, this.enemies, this.onPlayerHit, null, this);
   }
 
