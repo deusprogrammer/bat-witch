@@ -1,4 +1,4 @@
-// Loudness is measured in short windows; waveform(t) interpolates between them.
+// Loudness is measured in short windows; waveform(time) interpolates between them.
 const WINDOW_SECONDS = 1 / 120;
 const NORMALIZE_PERCENTILE = 0.99;
 
@@ -12,7 +12,7 @@ export const decodeAudio = (arrayBuffer, context = new OfflineAudioContext(1, 1,
  * Turns an AudioBuffer into a single reusable function:
  *
  *   const waveform = createWaveform(audioBuffer);
- *   waveform(t)   // loudness at t seconds into the track, 0 (silent) to 1 (loudest)
+ *   waveform(time)   // loudness at `time` seconds into the track, 0 (silent) to 1 (loudest)
  *
  * The raw signal swings between -1 and 1 hundreds of times per frame, which is noise at
  * 60 fps, so this returns its smoothed RMS loudness envelope instead, normalized so the loudest
@@ -51,9 +51,9 @@ export const createWaveform = (audioBuffer, { windowSeconds = WINDOW_SECONDS, at
     const reference = sorted[Math.floor((sorted.length - 1) * NORMALIZE_PERCENTILE)] || 1;
     for (let w = 0; w < windowCount; w++) envelope[w] = Math.min(1, envelope[w] / reference);
 
-    const waveform = (t) => {
-        const position = t / step - 0.5;
-        if (!(position > -0.5 && t < duration)) return 0;
+    const waveform = (time) => {
+        const position = time / step - 0.5;
+        if (!(position > -0.5 && time < duration)) return 0;
         const index = Math.max(0, Math.floor(position));
         const next = Math.min(windowCount - 1, index + 1);
         const fraction = Math.min(1, Math.max(0, position - index));

@@ -23,7 +23,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
       origin: this,
       velocity: BURST_VELOCITY,
       waveCount: 20,
-      waveInterval: (i) => 200 + Math.sin(i * 0.8) * 150,
+      waveInterval: ({ waveIndex }) => 200 + Math.sin(waveIndex * 0.8) * 150,
       projectilesPerWave: 90,
       pattern: 'orbit_burst'
     });

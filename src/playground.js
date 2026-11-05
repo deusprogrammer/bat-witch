@@ -23,20 +23,40 @@ const timeline = {
 
 const audio = new PlaygroundAudio();
 
-// wave(s) is the loaded track's loudness (0–1) at s seconds; 0 when no track is loaded.
-const wave = (s) => (audio.waveform ? audio.waveform(s) : 0);
+// wave(time) is the loaded track's loudness (0–1) at `time` seconds; 0 when no track is loaded.
+const wave = (time) => (audio.waveform ? audio.waveform(time) : 0);
 
 const EXPRESSION_HELPERS = { hsv, rgb, mix, clamp, backOut, palette, FLAGS: FLAG_PALETTES, wave };
 
-const S_SPAWN = '<code>s</code> = timeline/song time (s) when it fires';
-const S_NOW = '<code>s</code> = timeline/song time (s), updated every frame';
-const IJN = '<code>i</code> = wave index, <code>j</code> = bullet index, <code>n</code> = bullets in wave';
+// Expressions can use the engine's context field names or these short aliases.
+const VARIABLE_ALIASES = {
+  i: 'waveIndex',
+  j: 'bulletIndex',
+  n: 'bulletCount',
+  s: 'time',
+  t: 'age',
+  v: 'velocity'
+};
 
-const PER_WAVE = { vars: ['i', 's'], sample: [1, 1], hint: `<code>i</code> = wave index, ${S_SPAWN}` };
-const PER_BULLET = { vars: ['i', 'j', 'n', 's'], sample: [1, 1, 8, 1], hint: `${IJN}, ${S_SPAWN}` };
-// Re-evaluated as the bullet flies; mixing in wave(s) makes it react to the music.
-const PER_BULLET_LIVE = { ...PER_BULLET, hint: `${IJN}, ${S_NOW}. e.g. <code>100 + 200 * wave(s)</code>` };
-const AGE_HINT = `<code>t</code> = bullet age (s), ${S_NOW}`;
+const varName = (long, short) => `<code>${long}</code> (<code>${short}</code>)`;
+const WAVE_INDEX = varName('waveIndex', 'i');
+const BULLET_VARS = `${WAVE_INDEX}, ${varName('bulletIndex', 'j')}, ${varName('bulletCount', 'n')}`;
+const TIME_SPAWN = `${varName('time', 's')} = timeline/song seconds when it fires`;
+const TIME_NOW = `${varName('time', 's')} = timeline/song seconds, updated every frame`;
+const AGE = `${varName('age', 't')} = bullet age in seconds`;
+
+// Sample contexts used to check that an expression evaluates to a number.
+const WAVE_SAMPLE = { waveIndex: 1, time: 1 };
+const BULLET_SAMPLE = { waveIndex: 1, bulletIndex: 1, bulletCount: 8, time: 1, age: 0 };
+const LIVE_SAMPLE = { ...BULLET_SAMPLE, age: 1 };
+
+const PER_WAVE = { sample: WAVE_SAMPLE, hint: `${WAVE_INDEX}, ${TIME_SPAWN}` };
+const PER_BULLET = { sample: BULLET_SAMPLE, hint: `${BULLET_VARS}, ${TIME_SPAWN}` };
+// Re-evaluated as the bullet flies; mixing in wave(time) makes it react to the music.
+const PER_BULLET_LIVE = {
+  sample: LIVE_SAMPLE,
+  hint: `${BULLET_VARS}, ${TIME_NOW}, ${AGE}. e.g. <code>100 + 200 * wave(time)</code>`
+};
 
 const controls = [
   { key: 'velocity', label: 'Velocity (px/s)', min: -1500, max: 1500, step: 10, ...PER_BULLET_LIVE },
@@ -44,19 +64,17 @@ const controls = [
     key: 'outwardVelocity',
     label: 'Outward velocity over time (px/s)',
     optional: true,
-    vars: ['t', 'v', 'i', 'j', 's', 'n'],
-    sample: [1, 100, 1, 1, 1, 8],
-    hint: `Optional; overrides velocity. ${AGE_HINT}, <code>v</code> = resolved velocity, <code>i</code>/<code>j</code>/<code>n</code> = wave/bullet index/bullets in wave. e.g. <code>v * (1 + Math.sin(t * 4))</code>`
+    sample: { ...LIVE_SAMPLE, velocity: 100 },
+    hint: `Optional; overrides velocity. ${AGE}, ${varName('velocity', 'v')} = resolved velocity, ${BULLET_VARS}, ${TIME_NOW}. e.g. <code>velocity * (1 + Math.sin(age * 4))</code>`
   },
   {
     key: 'color',
     label: 'Color (tint)',
     optional: true,
     color: true,
-    vars: ['t', 'i', 'j', 'n', 's'],
-    sample: [1, 1, 1, 8, 1],
+    sample: LIVE_SAMPLE,
     snippets: COLOR_SHIFT_PRESETS,
-    hint: `Optional; blank = untinted. <code>#ff8800</code>, <code>0xff8800</code> or an expression using ${AGE_HINT}, <code>i</code>/<code>j</code>/<code>n</code>, <code>hsv(hue, sat, val)</code> (0–1), <code>rgb(r, g, b)</code> (0–255) and <code>mix(colorA, colorB, f)</code>, <code>palette(FLAGS.trans, t * 2)</code>. e.g. <code>hsv(t * 0.3 + j / n)</code>`
+    hint: `Optional; blank = untinted. <code>#ff8800</code>, <code>0xff8800</code> or an expression using ${AGE}, ${BULLET_VARS}, ${TIME_NOW}, <code>hsv(hue, sat, val)</code> (0–1), <code>rgb(r, g, b)</code> (0–255) and <code>mix(colorA, colorB, f)</code>, <code>palette(FLAGS.trans, age * 2)</code>. e.g. <code>hsv(age * 0.3 + bulletIndex / bulletCount)</code>`
   },
   {
     key: 'size',
@@ -64,10 +82,9 @@ const controls = [
     min: 4,
     max: 128,
     step: 1,
-    vars: ['t', 'i', 'j', 'n', 's'],
-    sample: [1, 1, 1, 8, 1],
+    sample: LIVE_SAMPLE,
     snippets: SIZE_SHIFT_PRESETS,
-    hint: `${AGE_HINT}, <code>i</code>/<code>j</code>/<code>n</code>; also <code>clamp(x, min, max)</code> and <code>backOut(x)</code>. e.g. <code>32 + 8 * Math.sin(t * 6)</code> or <code>16 + 30 * wave(s)</code>`
+    hint: `${AGE}, ${BULLET_VARS}, ${TIME_NOW}; also <code>clamp(x, min, max)</code> and <code>backOut(x)</code>. e.g. <code>32 + 8 * Math.sin(age * 6)</code> or <code>16 + 30 * wave(time)</code>`
   },
   { key: 'angularVelocity', label: 'Angular velocity (rad/s)', min: -10, max: 10, step: 0.05, patterns: ['orbit_burst'], ...PER_BULLET_LIVE },
   { key: 'spinVelocity', label: 'Spin velocity (rad/s)', min: -20, max: 20, step: 0.1, ...PER_BULLET_LIVE },
@@ -80,7 +97,7 @@ const controls = [
     max: 2000,
     step: 10,
     ...PER_WAVE,
-    hint: `<code>i</code> = wave index, <code>s</code> = time (s) of the previous wave, e.g. <code>200 + Math.sin(i * 0.8) * 150</code> or <code>300 - 220 * wave(s)</code>`
+    hint: `${WAVE_INDEX}, ${varName('time', 's')} = seconds of the previous wave, e.g. <code>200 + Math.sin(waveIndex * 0.8) * 150</code> or <code>300 - 220 * wave(time)</code>`
   },
   { key: 'waveCount', label: 'Waves per volley', min: 1, max: 50, step: 1 },
   { key: 'fireCooldown', label: 'Volley cooldown (ms)', min: 100, max: 15000, step: 100 },
@@ -88,6 +105,31 @@ const controls = [
   { key: 'originY', label: 'Emitter Y', min: 0, max: HEIGHT, step: 1 }
 ];
 
+const usesName = (expression, name) => new RegExp(`(?<![\\w$.])${name}(?![\\w$])`).test(expression);
+
+/**
+ * Builds the source of an arrow that takes the context object. Only the fields the expression
+ * mentions (by long name or alias) are read, since these run for every bullet every step.
+ */
+const contextArrowSource = (expression, result) => {
+  const fields = new Set();
+  const aliases = [];
+  for (const [alias, field] of Object.entries(VARIABLE_ALIASES)) {
+    if (usesName(expression, field)) fields.add(field);
+    if (usesName(expression, alias)) {
+      fields.add(field);
+      aliases.push(`${alias} = ${field}`);
+    }
+  }
+  const params = fields.size ? `{ ${[...fields].join(', ')} }` : '';
+  const declarations = aliases.length ? `const ${aliases.join(', ')}; ` : '';
+  return `(${params}) => { ${declarations}return ${result}; }`;
+};
+
+/**
+ * Turns a field's text into a value for the emitter: a number, or a function of the engine's
+ * context object for expressions. Throws with a readable message when the text is invalid.
+ */
 const parseControlValue = (control, text) => {
   const expression = String(text ?? '').trim();
   if (!expression) {
@@ -101,18 +143,17 @@ const parseControlValue = (control, text) => {
 
   const number = Number(expression);
   if (Number.isFinite(number)) return number;
-  if (!control.vars) throw new Error('Must be a number.');
+  if (!control.sample) throw new Error('Must be a number.');
 
   const helperNames = Object.keys(EXPRESSION_HELPERS);
   const helpers = Object.values(EXPRESSION_HELPERS);
-  const params = control.vars.join(', ');
-  // Helpers are bound once; the returned arrows take positional args directly, since audio
-  // patterns can call these millions of times while rebuilding a long song.
+  // Helpers are bound once. The returned arrows destructure the context object (no allocation),
+  // since audio patterns can call these millions of times while rebuilding a long song.
   const [evaluate, evaluateNumber] = new Function(
     ...helperNames,
-    `"use strict"; return [(${params}) => (${expression}), (${params}) => Number(${expression}) || 0];`
+    `"use strict"; return [${contextArrowSource(expression, `(${expression})`)}, ${contextArrowSource(expression, `Number(${expression}) || 0`)}];`
   )(...helpers);
-  if (!Number.isFinite(Number(evaluate(...control.sample)))) {
+  if (!Number.isFinite(Number(evaluate(control.sample)))) {
     throw new Error('Expression must evaluate to a number.');
   }
 
@@ -445,7 +486,7 @@ function updateAudioStatus() {
     setAudioStatus(DEFAULT_AUDIO_HINT);
     return;
   }
-  setAudioStatus(`♪ ${audio.name} (${(audio.duration / 1000).toFixed(1)}s). Timeline time = song time <code>s</code>; use <code>wave(s)</code> for its loudness (0–1).`);
+  setAudioStatus(`♪ ${audio.name} (${(audio.duration / 1000).toFixed(1)}s). Timeline time = song time <code>time</code> (<code>s</code>); use <code>wave(time)</code> for its loudness (0–1).`);
 }
 
 // Pre-renders the loudness envelope once; each frame only draws it plus the playhead.

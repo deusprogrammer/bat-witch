@@ -1,56 +1,99 @@
 import Bullet from '../Bullet';
 
-export const resolveValue = (value, ...args) => typeof value === 'function' ? value(...args) : value;
+/**
+ * A parameter is either a plain value or a function of a context object (see BulletEmitter.js
+ * for the fields). Functions are called; plain values are returned as-is.
+ */
+export const resolveValue = (value, context) => typeof value === 'function' ? value(context) : value;
 
+/** How many bullets a wave fires. projectilesPerWave gets { waveIndex, time }. */
 export const resolveProjectileCount = (bulletEmitter, { waveIndex, spawnTime }) => {
-    return Math.max(0, Math.floor(Number(resolveValue(bulletEmitter.projectilesPerWave, waveIndex, spawnTime / 1000)) || 0));
+    const count = resolveValue(bulletEmitter.projectilesPerWave, { waveIndex, time: spawnTime / 1000 });
+    return Math.max(0, Math.floor(Number(count) || 0));
 }
 
+/** Angle in radians between neighbouring bullets when a ring is spread evenly around 360°. */
 export const calculateBurstSpacing = (projectilesPerWave) => {
     return (2 * Math.PI) / projectilesPerWave;
 }
 
 /**
- * Wraps the emitter's parameters as functions of the bullet's age for the 'orbit' behavior.
- * Every function also gets s, the emitter clock in seconds right now (the song time when the
- * timeSource is a song clock). Functions that ignore s give the same result every frame, so
- * plain math patterns and waveform-driven ones can be mixed freely.
- * Calls are positional (no spreads) because they run every integration step for every bullet.
+ * Creates the context object handed to one bullet's parameter functions, plus `at(age)`, which
+ * updates it for a moment in the bullet's life and returns it.
+ *
+ * The same object is reused for every call (velocity, spin, color and size are evaluated every
+ * integration step for every bullet, so allocating a fresh object each time would be costly).
+ * Read from it; don't keep a reference to it.
  */
-const orbitBehavior = (bulletEmitter, { waveIndex, bulletIndex, projectileCount, spawnSeconds, rotates }) => {
+const createBulletContext = ({ waveIndex, bulletIndex, bulletCount, spawnSeconds }) => {
+    const context = {
+        waveIndex,           // which wave of the volley fired this bullet (0, 1, 2, ...)
+        bulletIndex,         // this bullet's position in its wave (0 to bulletCount - 1)
+        bulletCount,         // how many bullets the wave fired; bulletIndex / bulletCount = fraction of the way around the ring
+        time: spawnSeconds,  // emitter clock in seconds (the song position when timeSource is a song clock)
+        age: 0,              // seconds since this bullet spawned
+        velocity: 0          // resolved `velocity`; only meaningful inside outwardVelocity
+    };
+    const at = (age) => {
+        context.age = age;
+        context.time = spawnSeconds + age;
+        return context;
+    };
+    return { context, at };
+};
+
+/**
+ * Turns the emitter's parameters into functions of the bullet's age for the 'orbit' behavior
+ * (definitions/bulletBehaviors.js), which integrates them over the bullet's life.
+ * Plain numbers stay numbers so constant patterns skip integration entirely.
+ */
+const orbitBehavior = (bulletEmitter, { at }, { rotates }) => {
     const { velocity, outwardVelocity, angularVelocity, spinVelocity } = bulletEmitter;
-    const i = waveIndex;
-    const j = bulletIndex;
-    const n = projectileCount;
     const velocityAt = typeof velocity === 'function'
-        ? (s) => Number(velocity(i, j, n, s)) || 0
+        ? (age) => Number(velocity(at(age))) || 0
         : () => Number(velocity) || 0;
+
+    let outward;
+    if (typeof outwardVelocity === 'function') {
+        outward = (age) => {
+            const current = at(age);
+            current.velocity = typeof velocity === 'function' ? Number(velocity(current)) || 0 : Number(velocity) || 0;
+            return outwardVelocity(current);
+        };
+    } else if (typeof velocity === 'function') {
+        outward = velocityAt;
+    } else {
+        outward = velocityAt();
+    }
+
+    const perFrame = (fn) => typeof fn === 'function'
+        ? (age) => fn(at(age))
+        : Number(fn) || 0;
 
     return {
         type: 'orbit',
-        outwardVelocity: typeof outwardVelocity === 'function'
-            ? (age) => {
-                const s = spawnSeconds + age;
-                return outwardVelocity(age, velocityAt(s), i, j, s, n);
-            }
-            : (typeof velocity === 'function' ? (age) => velocityAt(spawnSeconds + age) : velocityAt()),
-        angularVelocity: !rotates ? 0 : typeof angularVelocity === 'function'
-            ? (age) => angularVelocity(i, j, n, spawnSeconds + age)
-            : Number(angularVelocity) || 0,
-        spinVelocity: typeof spinVelocity === 'function'
-            ? (age) => spinVelocity(i, j, n, spawnSeconds + age)
-            : Number(spinVelocity) || 0
+        outwardVelocity: outward,
+        // Non-rotating patterns (burst, linear) fly straight out.
+        angularVelocity: rotates ? perFrame(angularVelocity) : 0,
+        spinVelocity: perFrame(spinVelocity)
     };
 };
 
-export const spawnBullet = (bulletEmitter, { waveIndex, spawnTime }, { bulletIndex, projectileCount, baseAngle, rotates }) => {
-    // Emitter clock in seconds at spawn; the song position when timeSource is a song clock.
+/**
+ * Spawns one bullet of a wave.
+ * baseAngle is the bullet's even-spacing angle in the ring; startAngle is added on top of it.
+ */
+export const spawnBullet = (bulletEmitter, { waveIndex, spawnTime }, { bulletIndex, bulletCount, baseAngle, rotates }) => {
     const spawnSeconds = spawnTime / 1000;
-    const spawnArgs = [waveIndex, bulletIndex, projectileCount, spawnSeconds];
+    const bulletContext = createBulletContext({ waveIndex, bulletIndex, bulletCount, spawnSeconds });
+    const { at } = bulletContext;
     const { color, size } = bulletEmitter;
-    const continuous = (fn) => typeof fn === 'function'
-        ? (age) => fn(age, waveIndex, bulletIndex, projectileCount, spawnSeconds + age)
-        : fn;
+    // Color and size are evaluated by the Bullet every frame with its current age.
+    const perFrame = (fn) => typeof fn === 'function' ? (age) => fn(at(age)) : fn;
+
+    // texture and startAngle are decided once, at spawn (age 0).
+    const texture = resolveValue(bulletEmitter.texture, at(0));
+    const startAngle = baseAngle + (Number(resolveValue(bulletEmitter.startAngle, at(0))) || 0);
 
     const bullet = new Bullet(bulletEmitter.scene, {
         origin: bulletEmitter.origin,
@@ -58,35 +101,37 @@ export const spawnBullet = (bulletEmitter, { waveIndex, spawnTime }, { bulletInd
         followParent: bulletEmitter.followParent,
         timeSource: bulletEmitter.timeSource,
         spawnTime,
-        texture: resolveValue(bulletEmitter.texture, ...spawnArgs),
-        color: continuous(color),
-        size: continuous(size),
+        texture,
+        color: perFrame(color),
+        size: perFrame(size),
         behavior: {
-            ...orbitBehavior(bulletEmitter, { waveIndex, bulletIndex, projectileCount, spawnSeconds, rotates }),
-            startAngle: baseAngle + resolveValue(bulletEmitter.startAngle, ...spawnArgs)
+            ...orbitBehavior(bulletEmitter, bulletContext, { rotates }),
+            startAngle
         }
     });
     bulletEmitter.bullets.add(bullet);
 }
 
+/** Fires a full ring of bullets spaced evenly around the origin. */
 export const emitRing = (bulletEmitter, wave, { rotates }) => {
-    const projectileCount = resolveProjectileCount(bulletEmitter, wave);
-    const spacing = calculateBurstSpacing(projectileCount);
+    const bulletCount = resolveProjectileCount(bulletEmitter, wave);
+    const spacing = calculateBurstSpacing(bulletCount);
 
-    for (let bulletIndex = 0; bulletIndex < projectileCount; bulletIndex++) {
+    for (let bulletIndex = 0; bulletIndex < bulletCount; bulletIndex++) {
         spawnBullet(bulletEmitter, wave, {
             bulletIndex,
-            projectileCount,
+            bulletCount,
             baseAngle: bulletIndex * spacing,
             rotates
         });
     }
 }
 
+/** Fires a single bullet straight down (startAngle steers it). */
 export const emitLinear = (bulletEmitter, wave) => {
     spawnBullet(bulletEmitter, wave, {
         bulletIndex: 0,
-        projectileCount: 1,
+        bulletCount: 1,
         baseAngle: Math.PI / 2,
         rotates: false
     });

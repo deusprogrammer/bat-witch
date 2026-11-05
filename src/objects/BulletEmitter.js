@@ -3,27 +3,42 @@ import { resolveValue } from './utils/bulletEmitterUtils';
 import { bulletEmitters } from './definitions/bulletEmitters';
 
 /**
- * Emitter parameters may be a plain value or a function. Every function gets `s` last: the
- * emitter clock in seconds (timeSource.now / 1000). With a song clock as the timeSource
- * (see utils/audioWaveform.js), s is the song's elapsed playtime, so waveform(s) links any
- * parameter to the music while the others stay plain math.
+ * Fires bullets in waves. A volley (activate()) is `waveCount` waves, `waveInterval` ms apart;
+ * each wave fires `projectilesPerWave` bullets in the shape given by `pattern`
+ * (see definitions/bulletEmitters.js: 'orbit_burst', 'burst' or 'linear').
  *
- * Evaluated once, when the wave or bullet spawns (s = spawn time):
- *   waveInterval(waveIndex, s)                                    ms since the previous wave (s = previous wave)
- *   projectilesPerWave(waveIndex, s)
- *   startAngle(waveIndex, bulletIndex, projectileCount, s)        radians, added to the even burst spacing
- *   texture(waveIndex, bulletIndex, projectileCount, s)           texture key
+ * Almost every option can be a plain value or a function. Functions receive one context object;
+ * destructure the fields you need:
+ *   velocity: ({ waveIndex, time }) => 100 + 20 * waveIndex
  *
- * Re-evaluated every frame while the bullet flies (s = now). Rates are integrated over the
+ * Context fields:
+ *   waveIndex     which wave of the volley (0, 1, 2, ...)
+ *   bulletIndex   the bullet's position in its wave (0 to bulletCount - 1)
+ *   bulletCount   how many bullets the wave fired. bulletIndex / bulletCount is how far around
+ *                 the ring the bullet is (0 to just under 1), whatever the count.
+ *   time          emitter clock in seconds (timeSource.now / 1000). With a song clock as the
+ *                 timeSource (see utils/audioWaveform.js) this is the song's elapsed playtime, so
+ *                 waveform(time) links any option to the music.
+ *   age           seconds since the bullet spawned
+ *   velocity      the resolved `velocity` option (outwardVelocity only)
+ *
+ * Decided once, when the wave or bullet spawns (time = spawn time, age = 0):
+ *   waveInterval({ waveIndex, time })        ms since the previous wave (time = the previous wave's time)
+ *   projectilesPerWave({ waveIndex, time })  bullets in the wave
+ *   startAngle(context)                      radians, added to the even spacing around the ring
+ *   texture(context)                         texture key (see definitions/bulletTextures.js)
+ *
+ * Re-evaluated every frame while the bullet flies (time = now). Rates are integrated over the
  * bullet's life, so changes speed bullets up or turn them rather than teleporting them:
- *   velocity(waveIndex, bulletIndex, projectileCount, s)          px/s
- *   angularVelocity(waveIndex, bulletIndex, projectileCount, s)   rad/s around the origin
- *   spinVelocity(waveIndex, bulletIndex, projectileCount, s)      rad/s each bullet spins about its own center
- *   outwardVelocity(age, velocity, waveIndex, bulletIndex, s, projectileCount)   overrides velocity
- *   color(age, waveIndex, bulletIndex, projectileCount, s)        tint as 0xRRGGBB, '#RRGGBB' or {r, g, b}
- *   size(age, waveIndex, bulletIndex, projectileCount, s)         display height in px
- * `age` is the bullet's age in seconds. Since these are re-evaluated, keep them deterministic
- * (no Math.random()).
+ *   velocity(context)           px/s outward from the origin
+ *   outwardVelocity(context)    px/s; optional, replaces velocity (which it can read as `velocity`)
+ *   angularVelocity(context)    rad/s around the origin ('orbit_burst' only)
+ *   spinVelocity(context)       rad/s each bullet spins about its own center
+ *   color(context)              tint as 0xRRGGBB, '#RRGGBB' or {r, g, b}
+ *   size(context)               display height in px
+ *
+ * Because they're re-evaluated, keep functions deterministic (no Math.random()), and don't hold
+ * on to the context object: it's reused between calls.
  *
  * Ready-made color and size functions live in definitions/colorShifts.js and definitions/sizeShifts.js.
  */
@@ -70,19 +85,24 @@ export default class BulletEmitter extends Phaser.GameObjects.GameObject {
         this.timeSource = timeSource;
     }
 
-    /** startTime: emitter clock (ms) of the volley's first wave. */
+    /**
+     * Works out when each wave of a volley fires, as ms offsets from the first wave.
+     * startTime: emitter clock (ms) of the volley's first wave.
+     */
     getWaveSchedule(startTime = this.timeSource.now) {
         const schedule = [{ waveIndex: 0, delay: 0 }];
 
         // Each interval is the gap since the previous wave, so delays accumulate.
         let delay = 0;
-        for (let i = 1; i < this.waveCount; i++) {
-            delay += Math.max(0, Number(resolveValue(this.waveInterval, i, (startTime + delay) / 1000)) || 0);
-            schedule.push({ waveIndex: i, delay });
+        for (let waveIndex = 1; waveIndex < this.waveCount; waveIndex++) {
+            const interval = resolveValue(this.waveInterval, { waveIndex, time: (startTime + delay) / 1000 });
+            delay += Math.max(0, Number(interval) || 0);
+            schedule.push({ waveIndex, delay });
         }
         return schedule;
     }
 
+    /** Fires one volley: the first wave now, the rest on the scene clock per getWaveSchedule(). */
     activate() {
         for (const { waveIndex, delay } of this.getWaveSchedule()) {
             if (delay === 0) {
@@ -93,6 +113,7 @@ export default class BulletEmitter extends Phaser.GameObjects.GameObject {
         }
     }
 
+    /** Fires a single wave using this emitter's pattern. spawnTime: emitter clock (ms). */
     emitWave(waveIndex = 0, spawnTime = this.timeSource.now) {
         bulletEmitters[this.pattern] && bulletEmitters[this.pattern](this, { waveIndex, spawnTime });
     }

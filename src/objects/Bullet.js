@@ -4,12 +4,22 @@ import { bulletBehaviors } from './definitions/bulletBehaviors';
 
 export default class Bullet extends Phaser.Physics.Arcade.Sprite {
     /**
+     * A single projectile. Usually created by BulletEmitter, which wraps its context-object
+     * functions into the simpler age-based functions described here.
+     *
+     * origin: point the bullet moves relative to ({x, y}; may be a moving game object).
+     * parent / followParent: when followParent is set, the bullet's x tracks the parent's x.
+     * timeSource / spawnTime: the clock the bullet's age is measured on (ms). Using a shared
+     *   clock (e.g. a song) keeps bullets deterministic when it's scrubbed.
+     * texture: texture key (see definitions/bulletTextures.js).
      * color: a tint (0xRRGGBB, '#RRGGBB' or {r, g, b}), or color(age, bullet) evaluated every frame.
-     * Leave it undefined to draw the texture untinted.
+     *   Leave it undefined to draw the texture untinted.
      * size: display height in px (width keeps the texture's aspect ratio), or size(age, bullet)
-     * evaluated every frame. The hitbox scales with it.
+     *   evaluated every frame. The hitbox scales with it.
+     * behavior: how it moves; { type, ...options } (see definitions/bulletBehaviors.js).
      * behavior.spinVelocity: rad/s the sprite rotates about its own center (any behavior type),
-     * or spinVelocity(age), integrated over the bullet's life.
+     *   or spinVelocity(age), integrated over the bullet's life.
+     * `age` is always seconds since spawnTime.
      */
     constructor(scene, {
         origin,
