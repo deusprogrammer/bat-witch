@@ -19,7 +19,7 @@ import { bulletEmitters } from './definitions/bulletEmitters';
  *   velocity(waveIndex, bulletIndex, projectileCount, s)          px/s
  *   angularVelocity(waveIndex, bulletIndex, projectileCount, s)   rad/s around the origin
  *   spinVelocity(waveIndex, bulletIndex, projectileCount, s)      rad/s each bullet spins about its own center
- *   outwardVelocity(age, velocity, waveIndex, bulletIndex, s)     overrides velocity
+ *   outwardVelocity(age, velocity, waveIndex, bulletIndex, s, projectileCount)   overrides velocity
  *   color(age, waveIndex, bulletIndex, projectileCount, s)        tint as 0xRRGGBB, '#RRGGBB' or {r, g, b}
  *   size(age, waveIndex, bulletIndex, projectileCount, s)         display height in px
  * `age` is the bullet's age in seconds. Since these are re-evaluated, keep them deterministic

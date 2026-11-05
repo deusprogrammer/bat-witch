@@ -204,6 +204,29 @@ export const BUILT_IN_PRESETS = [
       color: 'hsv(0.85 + s * 0.03 + 0.2 * wave(s), 0.9 - 0.6 * wave(s) ** 3)'
     }
   },
+  {
+    // Showcase: nearly every field reacts to the song. Quiet = sparse, slow, dim six-petal
+    // flowers; loud = dense counter-rotating rings that surge outward, bloom, swell, spin and
+    // flash white. Coloring by wave (i) turns the stream of rings into rainbow spiral arms.
+    name: 'HOLY SHIT',
+    settings: {
+      audio: DEMO_TRACK,
+      pattern: 'orbit_burst',
+      texture: 'heart-bullet',
+      velocity: '50 + 300 * wave(s) ** 2',
+      outwardVelocity: 'v * (1 + (0.15 + 0.45 * wave(s)) * Math.cos(j * 12.566 * 3 / n))',
+      angularVelocity: '(i % 2 ? 1 : -1) * (0.15 + 1.1 * wave(s) ** 2)',
+      startAngle: 'i * 0.09',
+      projectilesPerWave: '6 * (3 + Math.round(5 * wave(s) ** 1.5))',
+      waveInterval: 'Math.max(80, 520 - 440 * wave(s))',
+      spinVelocity: '(j % 2 ? 1 : -1) * 9 * wave(s)',
+      size: '14 + 30 * wave(s) ** 2 + 4 * Math.sin(t * 8 + j)',
+      color: 'hsv(i * 0.035 + 0.25 * wave(s), 1 - 0.8 * wave(s) ** 4, 0.55 + 0.45 * wave(s))',
+      waveCount: 5000,
+      fireCooldown: 600000,
+      originY: 330
+    }
+  },
   // Spiral that spins and fires faster as the song gets louder; blue when quiet, red when loud.
   withMusic('Default spiral', {
     velocity: '60 + 200 * wave(s) ** 2',

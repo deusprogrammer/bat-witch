@@ -44,9 +44,9 @@ const controls = [
     key: 'outwardVelocity',
     label: 'Outward velocity over time (px/s)',
     optional: true,
-    vars: ['t', 'v', 'i', 'j', 's'],
-    sample: [1, 100, 1, 1, 1],
-    hint: `Optional; overrides velocity. ${AGE_HINT}, <code>v</code> = resolved velocity, <code>i</code>/<code>j</code> = wave/bullet index. e.g. <code>v * (1 + Math.sin(t * 4))</code>`
+    vars: ['t', 'v', 'i', 'j', 's', 'n'],
+    sample: [1, 100, 1, 1, 1, 8],
+    hint: `Optional; overrides velocity. ${AGE_HINT}, <code>v</code> = resolved velocity, <code>i</code>/<code>j</code>/<code>n</code> = wave/bullet index/bullets in wave. e.g. <code>v * (1 + Math.sin(t * 4))</code>`
   },
   {
     key: 'color',

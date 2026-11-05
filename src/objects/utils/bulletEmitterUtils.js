@@ -31,7 +31,7 @@ const orbitBehavior = (bulletEmitter, { waveIndex, bulletIndex, projectileCount,
         outwardVelocity: typeof outwardVelocity === 'function'
             ? (age) => {
                 const s = spawnSeconds + age;
-                return outwardVelocity(age, velocityAt(s), i, j, s);
+                return outwardVelocity(age, velocityAt(s), i, j, s, n);
             }
             : (typeof velocity === 'function' ? (age) => velocityAt(spawnSeconds + age) : velocityAt()),
         angularVelocity: !rotates ? 0 : typeof angularVelocity === 'function'
