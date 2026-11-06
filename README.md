@@ -89,7 +89,8 @@ velocity: ({ waveIndex, bulletIndex, bulletCount }) => 110 + 45 * Math.cos(bulle
 | `size`            | display height in px (the hitbox scales with it) |
 
 Rates (velocities) are **integrated** over the bullet's life rather than applied instantly, so when
-a value changes the bullet speeds up or turns smoothly instead of jumping.
+a value changes the bullet speeds up or turns smoothly instead of jumping. See
+[How bullets move: integration](#how-bullets-move-integration) for how and why.
 
 Two rules for functions:
 
@@ -112,6 +113,177 @@ size: sizeShifts.popIn({ size: 32 }),
 Colors: `rainbow`, `pulse`, `fade`, `heat`, `strobe`, `palette`, `flag`.
 Sizes: `pulse`, `grow`, `popIn`, `ripple`.
 Helpers in `utils/bulletUtils.js`: `hsv`, `rgb`, `mix`, `palette`, `clamp`, `backOut`.
+
+## How bullets move: integration
+
+This section explains the math behind bullet movement: what "integrating a rate" means, why the
+engine does it, and how `integrateOverAge` (in `utils/bulletUtils.js`) does it.
+
+### The problem: speeds that change over time
+
+A bullet's options give *rates*: `outwardVelocity` (px/s), `angularVelocity` (rad/s) and
+`spinVelocity` (rad/s). What we actually need to draw the bullet is a *position*: how far out it
+is, what angle it's at, and how far it has spun.
+
+If a rate is a constant number, that's easy:
+
+```
+distance = speed × time        (100 px/s for 2 s = 200 px)
+```
+
+But a rate can be a function of `age` or of the song, so it changes while the bullet flies. Then
+`speed × time` doesn't work anymore. For example, 100 px/s for 1 s and then 50 px/s for 2 s is
+100 + 100 = **200 px**. Using the *current* speed for the whole life would give 50 × 3 = 150 px,
+which is wrong. We need to add up how far the bullet moved during each moment, at the speed it had
+in that moment.
+
+### Slope and area
+
+These two ideas from calculus are the whole trick:
+
+- The **derivative** is the *slope* of a curve at a point. Velocity is the derivative of position:
+  how fast the position is changing right now.
+- The **integral** is the *area under* a curve. Position is the integral of velocity: the area
+  under the velocity curve from spawn until now.
+
+The units confirm it: the area of a rectangle on a speed-vs-time graph is
+height × width = px/s × s = **px**.
+
+The integral only gives the *change* since spawn, so the engine adds it to a starting value:
+
+```
+current position = start + area under the rate curve from age 0 to now
+```
+
+In `definitions/bulletBehaviors.js` that's exactly what `orbit` does:
+
+```js
+state.orbitAngle  = startAngle  + overAge(angularVelocity, state.angleIntegral);
+state.orbitRadius = startRadius + overAge(outwardVelocity, state.radiusIntegral);
+```
+
+`overAge(rate)` is "the total change since spawn": pixels for `outwardVelocity` and radians for
+`angularVelocity`. `Bullet.applySpin` does the same for `spinVelocity`. If the rate is a plain
+number, `overAge` just returns `rate × age`, because the area under a flat line is a rectangle and
+needs no slicing.
+
+**Negative area.** When a rate goes below zero, its area counts as negative and the total
+shrinks. That is how a boomerang works: `outwardVelocity` turns negative, the radius falls, and
+the bullet comes back.
+
+### Approximating the area with rectangles
+
+A computer can't find the exact area under an arbitrary function (such as a song's loudness), so
+it adds up thin rectangles instead:
+
+- **Width:** a small slice of time, the *step*.
+- **Height:** the rate during that slice.
+- **Area:** height × width, which is how far the bullet moved during that slice.
+
+Add up every rectangle from spawn to now and you have the integral. As the slices get narrower,
+the sum gets closer to the exact area. In the limit where the width goes to 0, it *is* the exact
+area; that limit is the definition of the integral (a "Riemann sum").
+
+### Where in each slice to measure: the midpoint
+
+How tall each rectangle should be depends on where in the slice you read the rate:
+
+- **Left edge.** Use the rate at the start of the slice. This is the classic
+  `position += speed * delta` you'd write in a per-frame `update`. When a bullet speeds up, every
+  slice undercounts; when it slows down, every slice overcounts. The errors all lean the same way,
+  so they pile up.
+- **Midpoint.** Use the rate at the middle of the slice. On a rising curve the rectangle is too
+  tall over half the slice and too short over the other half, so the errors mostly cancel.
+
+The engine uses the midpoint. An example with `speed = 100 × age`, where the exact distance at
+age 1 s is 50 px:
+
+| Method       | Slice width | Result after 1 s |
+|--------------|-------------|------------------|
+| Left edge    | 1/60 s      | 49.17 px         |
+| Left edge    | 1/30 s      | 48.33 px         |
+| **Midpoint** | **1/30 s**  | **50.00 px**     |
+
+For rates that change at a constant pace (straight lines), the midpoint rule is exact. For curvy
+ones (sine waves, audio) it isn't, but halving the slice width cuts its error about 4×, against
+only 2× for the left edge. At 1/30 s the error is a small fraction of a pixel.
+
+> Note: the very first version of `Bullet` used `orbitAngle += orbitSpeed * (delta / 1000)` every
+> frame. Its speeds never changed, though, so that was just "distance = speed × time" done in
+> pieces, which is exact for a constant speed. Slicing only matters once rates vary over time.
+
+### The fixed grid (a "fixed timestep")
+
+The slices are **not** frames. They sit on a fixed grid measured from the bullet's spawn:
+
+```
+age:   0      1/30     2/30     3/30 ...
+       |-------|--------|--------|
+       [slice 1][slice 2][slice 3]
+```
+
+Frames arrive at uneven times (a 60 fps machine, a 30 fps machine, a hitch, or a jump when you
+scrub the playground's timeline). If each frame were a slice, the slices would differ every time
+and so would the answers. In the left-edge table above, 1/60 s and 1/30 s frames end up in
+different places.
+
+With a fixed grid, the engine divides time up itself instead of letting the frame timing decide.
+A bullet at age 1.5 s sums exactly the same rectangles whether you watched it live, jumped straight
+there, or exported a video frame by frame. The position depends **only on age**. That determinism
+is what makes scrubbing and export possible, and it's why rate functions must not use
+`Math.random()`.
+
+The step is `INTEGRATION_STEP = 1/30` s. Narrower slices are more accurate but mean more function
+calls, which makes seeking slower when a whole song's worth of history has to be rebuilt. Thanks to
+the midpoint rule, 1/30 s is already accurate to well under a pixel. (The step was 1/240 s before
+audio patterns, which can require seeking minutes into a song.)
+
+### Caching: full slices plus one partial slice
+
+The current age usually falls *inside* a slice, so `integrateOverAge` adds two parts:
+
+1. **Every completed slice.** These are kept in the bullet's state as `{ steps, distance }`: how
+   many slices are done and the sum of their areas. Each frame adds only the slices that finished
+   since the last frame, so the work isn't repeated.
+2. **One partial rectangle** from the last grid line up to the current age, also measured at its
+   own midpoint. It's recomputed every frame and never saved, because it keeps growing until it
+   becomes a full slice.
+
+At age 0.11 s, for example, that's three cached slices (0 to 0.1 s) plus a thin partial one from
+0.1 to 0.11 s:
+
+```js
+while ((integral.steps + 1) * step <= age) {             // add any newly completed slices
+    integral.distance += midpointDistance(integral.steps * step, step);
+    integral.steps++;
+}
+const committedAge = integral.steps * step;
+return integral.distance + midpointDistance(committedAge, age - committedAge);  // + partial
+```
+
+Each integrated quantity has its own cache: `angleIntegral`, `radiusIntegral` and `spinIntegral`
+in `Bullet.state`.
+
+### Reading the song at the right moment
+
+When a rate function is evaluated at a slice's midpoint, the context gives it the matching moment:
+`age` is the midpoint and `time` is `spawn time + age`. So even when a slice's history is rebuilt
+later (say, after a seek), an audio-driven rate reads the song's loudness *at that slice*, not the
+loudness now. This is set up by `at(age)` in `createBulletContext`
+(`utils/bulletEmitterUtils.js`).
+
+### From polar to screen coordinates
+
+The angle and radius are polar coordinates around the origin. `orbit` converts them to x/y with
+basic trig:
+
+```js
+bullet.x = origin.x + cos(angle) × radius
+bullet.y = origin.y + sin(angle) × radius
+```
+
+With `angularVelocity = 0` the angle never changes, so the bullet flies straight out. With both
+rates non-zero it traces a spiral.
 
 ## Driving patterns from audio
 
