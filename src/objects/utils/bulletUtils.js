@@ -1,23 +1,22 @@
 import Phaser from 'phaser';
 
-const RADIUS_INTEGRATION_STEP = 1 / 240;
+// Coarse enough that rebuilding minutes of song-time history stays cheap; the partial step is
+// evaluated exactly each frame, so motion stays smooth and constant rates stay exact.
+const INTEGRATION_STEP = 1 / 30;
 
-export const outwardDistance = (bullet, age) => {
-    const {behavior: {outwardVelocity}} = bullet;
-    if (typeof outwardVelocity !== 'function') {
-        return outwardVelocity * age;
-    }
+/**
+ * Integrates rate(age) from 0 to age in fixed steps from spawn, so the result depends only on
+ * age, not frame timing. `integral` ({steps, distance}) caches the completed steps between calls.
+ */
+export const integrateOverAge = (rate, age, integral, step = INTEGRATION_STEP) => {
+    const midpointDistance = (start, duration) => rate(start + duration / 2) * duration;
 
-    // Integrate in fixed steps from spawn so the result depends only on age, not frame timing.
-    const integral = bullet.state.radiusIntegral;
-    const midpointDistance = (start, duration) => outwardVelocity(start + duration / 2) * duration;
-
-    while ((integral.steps + 1) * RADIUS_INTEGRATION_STEP <= age) {
-        integral.distance += midpointDistance(integral.steps * RADIUS_INTEGRATION_STEP, RADIUS_INTEGRATION_STEP);
+    while ((integral.steps + 1) * step <= age) {
+        integral.distance += midpointDistance(integral.steps * step, step);
         integral.steps++;
     }
 
-    const committedAge = integral.steps * RADIUS_INTEGRATION_STEP;
+    const committedAge = integral.steps * step;
     return integral.distance + midpointDistance(committedAge, age - committedAge);
 }
 
