@@ -278,10 +278,10 @@
         background: #0a0d1c;
         border: 1px solid #343d63;
         border-radius: 4px;
-        cursor: pointer;
       }
 
       #audio-waveform[hidden],
+      #scrubber[hidden],
       #export-audio-row[hidden],
       .audio-row[hidden] {
         display: none;
@@ -315,7 +315,7 @@
       <div id="game"></div>
       <div class="timeline lock-during-export">
         <button id="play-pause" type="button" aria-pressed="true" aria-label="Pause" title="Pause">❚❚</button>
-        <input id="scrubber" type="range" min="0" max="20000" step="1" value="0" aria-label="Timeline position" />
+        <input id="scrubber" type="range" min="0" max="20000" step="1" value="0" aria-label="Timeline position" hidden disabled />
         <span id="time-readout">0.00s / 20.00s</span>
         <label class="timeline-option" title="Timeline length in seconds">
           <input id="timeline-length" type="number" min="1" max="600" step="any" aria-label="Timeline length in seconds" />
@@ -402,7 +402,7 @@
           <span>Audio track (MP3 / WAV)</span>
           <input id="audio-file" type="file" accept="audio/*,.mp3,.wav" />
         </label>
-        <canvas id="audio-waveform" width="600" height="80" hidden title="Click to seek"></canvas>
+        <canvas id="audio-waveform" width="600" height="80" hidden title="Audio waveform"></canvas>
         <span id="audio-status" class="hint" role="status">
           No track loaded. Use <code>wave(time)</code> in any field for the track's loudness (0–1) at song time <code>time</code> (<code>s</code>); mix it with any other math.
         </span>
@@ -420,6 +420,7 @@
           <span>Pattern</span>
           <select id="pattern">
             <option value="orbit_burst">orbit_burst</option>
+            <option value="cone">cone</option>
             <option value="burst">burst</option>
             <option value="linear">linear</option>
           </select>

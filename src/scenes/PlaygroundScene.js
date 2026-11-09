@@ -28,6 +28,7 @@ export default class PlaygroundScene extends Phaser.Scene {
     this.maxVolleySpan = 0;
     this.pendingSeek = null;
     this.dirty = true;
+    this.childVolleys = [];
   }
 
   preload() {
@@ -38,12 +39,16 @@ export default class PlaygroundScene extends Phaser.Scene {
   create() {
     // Enemy.update() is intentionally never called; firing is driven by the timeline instead.
     this.enemy = new Enemy(this, this.settings.originX, this.settings.originY);
-    this.enemy.bulletEmitter.destroy();
+    for (const emitter of this.enemy.bulletEmitters) {
+      emitter.bullets.destroy();
+      emitter.destroy();
+    }
 
     this.emitter = new BulletEmitter(this, {
       origin: this.enemy,
       timeSource: this.timelineClock,
-      ...this.emitterOptions()
+      ...this.emitterOptions(),
+      onBulletSpawn: bullet => this.attachChildEmitter(bullet)
     });
     // Bullets are advanced manually after the timeline moves so they never read a stale time.
     this.emitter.bullets.runChildUpdate = false;
@@ -57,9 +62,78 @@ export default class PlaygroundScene extends Phaser.Scene {
 
   emitterOptions() {
     const {
-      pattern, velocity, outwardVelocity, angularVelocity, spinVelocity, startAngle, projectilesPerWave, waveCount, waveInterval, color, size, texture
+      pattern, velocity, outwardVelocity, angularVelocity, spinVelocity, direction, coneAngle, projectilesPerWave, waveCount, waveInterval, color, size, texture
     } = this.settings;
-    return { pattern, velocity, outwardVelocity, angularVelocity, spinVelocity, startAngle, projectilesPerWave, waveCount, waveInterval, color, size, texture };
+    return { pattern, velocity, outwardVelocity, angularVelocity, spinVelocity, direction, coneAngle, projectilesPerWave, waveCount, waveInterval, color, size, texture };
+  }
+
+  attachChildEmitter(parent) {
+    const config = this.settings.childEmitter;
+    if (!config) return;
+
+    const { triggerAge, destroyParent = false, sweep = false, ...options } = config;
+    const emitter = new BulletEmitter(this, {
+      ...options,
+      origin: parent,
+      timeSource: this.timelineClock,
+      ...(sweep ? { direction: ({ waveIndex }) => Math.PI / 2 + Math.sin(waveIndex * 0.25) * 0.9 } : {})
+    });
+    emitter.bullets.runChildUpdate = false;
+    parent.attachEmitter('preset-child', emitter);
+    const triggerTime = parent.spawnTime + triggerAge * 1000;
+    this.childVolleys.push({
+      parent, emitter, destroyParent, triggerTime,
+      schedule: emitter.getWaveSchedule(triggerTime),
+      nextWave: 0,
+      origin: null
+    });
+  }
+
+  advanceChildWaves() {
+    const target = this.currentTime;
+    for (const volley of this.childVolleys) {
+      const { parent, emitter, schedule, triggerTime } = volley;
+      if (volley.nextWave === 0 && !parent.active) {
+        volley.nextWave = schedule.length;
+      }
+      while (volley.nextWave < schedule.length) {
+        const { waveIndex, delay } = schedule[volley.nextWave];
+        const spawnTime = triggerTime + delay;
+        if (spawnTime > target) break;
+
+        if (parent.active) parent.advance((spawnTime - parent.spawnTime) / 1000);
+        if (!volley.origin) {
+          volley.origin = emitter.followParent ? parent : { x: parent.x, y: parent.y };
+        }
+        // Use the scheduled clock even when rebuilding or rendering frames in larger jumps.
+        this.timelineClock.now = spawnTime;
+        try {
+          emitter.emitWave(waveIndex, spawnTime, volley.origin);
+        } finally {
+          this.timelineClock.now = target;
+        }
+        volley.nextWave++;
+        if (volley.destroyParent && parent.active) parent.destroy();
+      }
+    }
+  }
+
+  clearChildEmitters() {
+    for (const { emitter } of this.childVolleys) {
+      emitter.bullets.clear(true, true);
+      emitter.bullets.destroy();
+      emitter.destroy();
+    }
+    this.childVolleys = [];
+  }
+
+  pruneChildEmitters() {
+    this.childVolleys = this.childVolleys.filter(({ emitter, schedule, nextWave }) => {
+      if (nextWave < schedule.length || emitter.bullets.countActive() > 0) return true;
+      emitter.bullets.destroy();
+      emitter.destroy();
+      return false;
+    });
   }
 
   get currentTime() {
@@ -120,7 +194,8 @@ export default class PlaygroundScene extends Phaser.Scene {
     this.moveTo(target);
     this.syncAudio();
 
-    this.bulletCountText.setText(`Bullets: ${this.emitter.bullets.countActive()}`);
+    const childCount = this.childVolleys.reduce((sum, { emitter }) => sum + emitter.bullets.countActive(), 0);
+    this.bulletCountText.setText(`Bullets: ${this.emitter.bullets.countActive() + childCount}`);
     this.onTimelineUpdate?.(this.currentTime);
   }
 
@@ -152,6 +227,7 @@ export default class PlaygroundScene extends Phaser.Scene {
   }
 
   rebuild(target) {
+    this.clearChildEmitters();
     this.emitter.bullets.clear(true, true);
     this.volleySchedules.clear();
     this.maxVolleySpan = 0;
@@ -171,9 +247,14 @@ export default class PlaygroundScene extends Phaser.Scene {
 
   /** Moves and culls bullets without updating their visuals (used while fast-forwarding). */
   advanceBullets() {
+    this.advanceChildWaves();
     for (const bullet of [...this.emitter.bullets.getChildren()]) {
       bullet.advance();
     }
+    for (const { emitter } of this.childVolleys) {
+      for (const bullet of [...emitter.bullets.getChildren()]) bullet.advance();
+    }
+    this.pruneChildEmitters();
   }
 
   /**
@@ -217,9 +298,14 @@ export default class PlaygroundScene extends Phaser.Scene {
   }
 
   updateBullets() {
+    this.advanceChildWaves();
     // Copy first: bullets that leave the bounds destroy themselves and leave the group mid-iteration.
     for (const bullet of [...this.emitter.bullets.getChildren()]) {
       bullet.update();
     }
+    for (const { emitter } of this.childVolleys) {
+      for (const bullet of [...emitter.bullets.getChildren()]) bullet.update();
+    }
+    this.pruneChildEmitters();
   }
 }

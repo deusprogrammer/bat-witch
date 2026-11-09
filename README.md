@@ -21,6 +21,35 @@ Then open:
 
 `npm run build` writes a production build to `dist/`, and `npm run preview` serves it.
 
+### Main game controls and combat
+
+Press Enter on the start screen to begin. Move with the arrow keys. Each Space press fires a
+volley of five nine-shot cones, 10 ms apart; hold it for 200 ms to start the focused stream,
+which stops on release.
+The cone and focused stream use separate emitters; repeated taps fire repeated cones.
+The focused stream fires every 1 ms, including between-frame shots with their original
+spawn times so the beam stays dense regardless of frame rate.
+The canvas uses the title image's 1672 x 941 dimensions and fits the browser without cropping.
+Gameplay, collision bounds, and the HUD occupy a horizontally centered 540 x 941 viewport,
+using the full canvas height with a white border.
+The background starts at the bottom of the image and scrolls toward the top at 15 px/s,
+then stops without looping. Starting a new fight resets it.
+Movement slows from 300 to 220 px/s while
+shooting. The bright cyan circle with a black outline shows the actual 5 px-radius hitbox,
+offset 4 px right of the animation-frame center to better match the artwork.
+Enemy contact and all hostile bullets, including bullets
+from attached emitters, can hit it.
+
+You have three lives, shown as small player icons at the bottom. A hit makes the player spin and
+disappear, then respawn with two seconds of invulnerability (shown by blinking). Losing all
+three lives ends the game. The enemy has a 28 x 44 px rectangular hitbox centered 8 px above
+the animation-frame center and 1000 health; she briefly flashes white when hit.
+each player bullet deals 1 damage and is consumed on impact. Its health bar is at the top.
+Losing the last life shows the game-over image. Press Enter to return to the title screen,
+then Enter again to play. The game-over image fits the canvas without cropping.
+Defeating the enemy shows the victory image, fitted without cropping.
+Press Enter on the victory screen to return to the title screen.
+
 ## The bullet engine
 
 ### BulletEmitter
@@ -48,7 +77,49 @@ A **volley** (`activate()`) is `waveCount` waves, fired `waveInterval` ms apart.
 |---------------|-------------------------------------------------------------------|
 | `orbit_burst` | A ring of bullets that also circles the origin (`angularVelocity`) |
 | `burst`       | A ring of bullets flying straight out                             |
-| `linear`      | One bullet, straight down by default (steer it with `startAngle`)  |
+| `linear`      | One bullet along `direction`, straight down by default |
+| `cone`        | Bullets distributed evenly across `coneAngle`, centered on `direction` |
+
+A cone uses `projectilesPerWave` bullets across `coneAngle` (default 0.4 radians), including both
+edges. Neighbor spacing is `coneAngle / (projectilesPerWave - 1)`, so increasing the count
+makes the cone denser without widening it.
+`direction` accepts radians or a non-zero `[x, y]` vector: 0 / `[1, 0]` points right,
+`Math.PI / 2` / `[0, 1]` down, and `-Math.PI / 2` / `[0, -1]` up.
+Vector magnitude does not affect speed. It may also be a function of the bullet's spawn context.
+The default is right for cones/rings and down for `linear`, preserving existing linear shots.
+For nine bullets centered upward across 0.4 radians:
+
+```js
+pattern: 'cone',
+velocity: 1000,
+projectilesPerWave: 9,
+coneAngle: 0.4,
+direction: [0, -1] // equivalently -Math.PI / 2
+```
+
+`coneAngle` may also be a function of `{ waveIndex, time }`, resolved once per wave.
+One bullet fires along `direction`; a zero cone angle stacks all bullets along that direction.
+Rings and cones share spread logic. At exactly `2 * Math.PI`, the spread divides by the bullet
+count rather than count minus one, avoiding overlapping first/last bullets. A ring starts at
+`direction`; a partial cone starts at `direction - coneAngle / 2`.
+The emitter's `startAngle` option is replaced by `direction`; the internal Bullet behavior
+still stores its resolved angle as `startAngle`. Older saved playground presets are translated
+when loaded so their trajectories stay the same.
+
+Set `followParent` on the emitter to choose how emitted bullets use its `origin`:
+
+- `false` (default): `activate()` captures the origin's x/y once. Every wave in that volley fires
+  from that same position, even if the source moves. Separate activations capture new positions.
+  Calling `emitWave()` directly uses the position at that call unless an origin is supplied.
+- `true`: bullets keep a live origin and move relative to it in both axes, preserving their
+  outward and angular motion as the origin moves.
+
+For an emitter attached to a bullet, use `origin: bullet`, not `origin: bullet.origin`.
+The former fires from the bullet's current position; the latter refers to the bullet's own
+movement center. Any object with x/y can serve as an origin.
+
+This replaces the old x-only `followParent` override. Existing emitters using `true` (including
+the player) now follow both axes without discarding horizontal motion.
 
 ### Parameters: values or functions
 
@@ -74,7 +145,7 @@ velocity: ({ waveIndex, bulletIndex, bulletCount }) => 110 + 45 * Math.cos(bulle
 |----------------------|--------------------------|--------|
 | `waveInterval`       | `{ waveIndex, time }`    | ms since the previous wave (`time` = the previous wave's time) |
 | `projectilesPerWave` | `{ waveIndex, time }`    | bullets in the wave |
-| `startAngle`         | full context             | radians added to the even spacing around the ring |
+| `direction`          | full context             | radians or non-zero `[x, y]`; cone center / ring's first bullet |
 | `texture`            | full context             | texture key (see `definitions/bulletTextures.js`) |
 
 **Re-evaluated every frame** while the bullet flies (`time` and `age` keep moving):
@@ -336,9 +407,17 @@ In game code you can also build the waveform from Phaser's cache:
   `wave(time)` (the loaded track's loudness). The color and size fields have snippet menus.
 - **Presets**: built-in visual presets, music versions of them, and showcase presets ("Smooooch",
   "HOLY SHIT"). Your own presets save to `localStorage`; **Copy JSON** exports the settings.
+  Three preset-only examples attach emitters to bullets: **Seed fireworks** replaces a carrier
+  with four rings after two seconds; **Satellite carriers** keeps small orbiting bullets centered
+  on a moving carrier; **Spray carriers** fires a sweeping stream one second after spawning,
+  with the emitted bullets following the moving carrier through `followParent: true`.
+  Each child volley captures one position unless `followParent` is true.
+  Child configuration is preserved when saving or copying a preset; there are no child-emitter
+  controls yet. Selecting a regular preset removes the child effect.
 - **Audio**: upload an MP3/WAV, or pick a music preset. The timeline then follows the song.
-- **Timeline**: play, pause, loop and scrub. Scrubbing rebuilds the scene by fast-forwarding,
-  which is why the functions have to be deterministic.
+- **Timeline**: play, pause and loop. Scrubbing controls are temporarily hidden, and clicking
+  the audio waveform no longer seeks. The underlying rebuild path remains for resets and export.
+  Child bullets share the timeline clock, pause with playback, and are cleared on reset.
 - **Export**: render a timeline range to **MP4** (with the music track if one is loaded) or **GIF**.
   Audio export needs a browser with WebCodecs AAC or Opus *encoding and decoding* (Chrome and Edge
   work). Where that isn't available, for example VS Code's built-in browser, the video exports

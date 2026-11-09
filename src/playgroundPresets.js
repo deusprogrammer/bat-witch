@@ -8,13 +8,15 @@ export const DEFAULT_SETTINGS = {
   size: 32,
   angularVelocity: 0.5,
   spinVelocity: 0,
-  startAngle: 0,
+  direction: 0,
+  coneAngle: 0.4,
   projectilesPerWave: 90,
   waveInterval: 250,
   waveCount: 20,
   fireCooldown: 5000,
   originX: 270,
-  originY: 50
+  originY: 50,
+  childEmitter: undefined
 };
 
 // Quick-pick expressions for the Color and Size fields. They mirror the factories in
@@ -77,7 +79,7 @@ export const BUILT_IN_PRESETS = [
     settings: {
       velocity: 110,
       angularVelocity: 0.35,
-      startAngle: 'waveIndex * 0.25',
+      direction: 'waveIndex * 0.25',
       color: 'hsv(waveIndex / 50 + bulletIndex / 5)',
       projectilesPerWave: 5,
       waveInterval: 70,
@@ -119,7 +121,7 @@ export const BUILT_IN_PRESETS = [
       pattern: 'burst',
       velocity: 80,
       outwardVelocity: 'velocity * (1 + 0.9 * Math.sin(age * 3))',
-      startAngle: 'waveIndex * Math.PI / 48',
+      direction: 'waveIndex * Math.PI / 48',
       projectilesPerWave: 48,
       waveInterval: 350,
       waveCount: 8,
@@ -164,7 +166,7 @@ export const BUILT_IN_PRESETS = [
     settings: {
       pattern: 'burst',
       velocity: 160,
-      startAngle: 'waveIndex * 0.12',
+      direction: 'waveIndex * 0.12',
       projectilesPerWave: 24,
       waveInterval: 'Math.max(40, 420 - waveIndex * 30)',
       waveCount: 18,
@@ -173,11 +175,77 @@ export const BUILT_IN_PRESETS = [
     }
   },
   {
+    name: 'Seed fireworks',
+    settings: {
+      pattern: 'linear',
+      velocity: 100,
+      waveCount: 1,
+      fireCooldown: 3000,
+      color: 'age % 0.5 < 0.25 ? 0xffffff : 0xff0000',
+      childEmitter: {
+        triggerAge: 2,
+        destroyParent: true,
+        pattern: 'burst',
+        velocity: 100,
+        waveCount: 4,
+        waveInterval: 250,
+        projectilesPerWave: 16,
+        color: 0xffcc33,
+        size: 20,
+        followParent: false
+      }
+    }
+  },
+  {
+    name: 'Satellite carriers',
+    settings: {
+      pattern: 'linear',
+      velocity: 70,
+      waveCount: 1,
+      fireCooldown: 4500,
+      color: '0xff69b4',
+      size: 40,
+      childEmitter: {
+        triggerAge: 0,
+        pattern: 'orbit_burst',
+        velocity: 20,
+        angularVelocity: 1.5,
+        waveCount: 1,
+        projectilesPerWave: 8,
+        color: 0x14c8b4,
+        size: 16,
+        followParent: true
+      }
+    }
+  },
+  {
+    name: 'Spray carriers',
+    settings: {
+      pattern: 'linear',
+      velocity: 65,
+      waveCount: 1,
+      fireCooldown: 4500,
+      color: '0xffffff',
+      childEmitter: {
+        triggerAge: 1,
+        pattern: 'linear',
+        velocity: 180,
+        waveCount: 50,
+        waveInterval: 45,
+        projectilesPerWave: 1,
+        color: 0x66ccff,
+        size: 16,
+        followParent: true,
+        sweep: true
+      }
+    }
+  },
+  {
     name: 'Sweeping stream',
     settings: {
       pattern: 'linear',
       velocity: 320,
-      startAngle: 'Math.sin(waveIndex * 0.25) * 0.9',
+      direction: 'Math.PI / 2 + Math.sin(waveIndex * 0.25) * 0.9',
       waveInterval: 45,
       waveCount: 50,
       fireCooldown: 2500,
@@ -194,7 +262,7 @@ export const BUILT_IN_PRESETS = [
       texture: 'heart-bullet',
       velocity: '40 + 260 * wave(time) ** 2',
       angularVelocity: '(waveIndex % 2 ? 1 : -1) * (0.1 + 0.8 * wave(time) ** 2)',
-      startAngle: 'waveIndex * 0.37',
+      direction: 'waveIndex * 0.37',
       projectilesPerWave: '8 + Math.round(28 * wave(time))',
       waveInterval: 'Math.max(90, 450 - 380 * wave(time))',
       waveCount: 1000,
@@ -216,7 +284,7 @@ export const BUILT_IN_PRESETS = [
       velocity: '50 + 300 * wave(time) ** 2',
       outwardVelocity: 'velocity * (1 + (0.15 + 0.45 * wave(time)) * Math.cos(bulletIndex * 12.566 * 3 / bulletCount))',
       angularVelocity: '(waveIndex % 2 ? 1 : -1) * (0.15 + 1.1 * wave(time) ** 2)',
-      startAngle: 'waveIndex * 0.09',
+      direction: 'waveIndex * 0.09',
       projectilesPerWave: '6 * (3 + Math.round(5 * wave(time) ** 1.5))',
       waveInterval: 'Math.max(80, 520 - 440 * wave(time))',
       spinVelocity: '(bulletIndex % 2 ? 1 : -1) * 9 * wave(time)',
@@ -239,7 +307,7 @@ export const BUILT_IN_PRESETS = [
   withMusic('Galaxy arms', {
     velocity: '80 + 160 * wave(time)',
     angularVelocity: 0.35,
-    startAngle: 'waveIndex * 0.25',
+    direction: 'waveIndex * 0.25',
     color: 'hsv(waveIndex / 50 + bulletIndex / 5, 1, 0.4 + 0.6 * wave(time))',
     size: '20 + 20 * wave(time) ** 2',
     projectilesPerWave: 5,
@@ -271,7 +339,7 @@ export const BUILT_IN_PRESETS = [
     pattern: 'burst',
     velocity: 80,
     outwardVelocity: 'velocity * (0.3 + 2 * wave(time) ** 2)',
-    startAngle: 'waveIndex * Math.PI / 48',
+    direction: 'waveIndex * Math.PI / 48',
     projectilesPerWave: 48,
     waveInterval: 'Math.max(200, 700 - 500 * wave(time))',
     originY: 200,
@@ -304,7 +372,7 @@ export const BUILT_IN_PRESETS = [
   withMusic('Accelerating volley', {
     pattern: 'burst',
     velocity: '100 + 260 * wave(time) ** 2',
-    startAngle: 'waveIndex * 0.12',
+    direction: 'waveIndex * 0.12',
     projectilesPerWave: 24,
     waveInterval: 'Math.max(40, 400 - 360 * wave(time))',
     color: 'mix(0x66ccff, 0xffffff, wave(time))',
@@ -314,7 +382,7 @@ export const BUILT_IN_PRESETS = [
   withMusic('Sweeping stream', {
     pattern: 'linear',
     velocity: '200 + 300 * wave(time)',
-    startAngle: 'Math.sin(time * 1.5) * (0.3 + 0.8 * wave(time))',
+    direction: 'Math.PI / 2 + Math.sin(time * 1.5) * (0.3 + 0.8 * wave(time))',
     waveInterval: 'Math.max(30, 140 - 110 * wave(time))',
     color: 'hsv(time * 0.1)',
     originY: 60

@@ -6,15 +6,21 @@ import Bullet from '../Bullet';
  */
 export const resolveValue = (value, context) => typeof value === 'function' ? value(context) : value;
 
+/** Direction is radians or a non-zero [x, y] vector; vector magnitude does not affect speed. */
+export const directionAngle = (direction) => {
+    if (typeof direction === 'number' && Number.isFinite(direction)) return direction;
+    if (Array.isArray(direction) && direction.length === 2
+        && direction.every(value => typeof value === 'number' && Number.isFinite(value))
+        && (direction[0] !== 0 || direction[1] !== 0)) {
+        return Math.atan2(direction[1], direction[0]);
+    }
+    throw new TypeError('Direction must be finite radians or a non-zero [x, y] vector.');
+};
+
 /** How many bullets a wave fires. projectilesPerWave gets { waveIndex, time }. */
 export const resolveProjectileCount = (bulletEmitter, { waveIndex, spawnTime }) => {
     const count = resolveValue(bulletEmitter.projectilesPerWave, { waveIndex, time: spawnTime / 1000 });
     return Math.max(0, Math.floor(Number(count) || 0));
-}
-
-/** Angle in radians between neighbouring bullets when a ring is spread evenly around 360°. */
-export const calculateBurstSpacing = (projectilesPerWave) => {
-    return (2 * Math.PI) / projectilesPerWave;
 }
 
 /**
@@ -89,19 +95,19 @@ const orbitBehavior = (bulletEmitter, at, { rotates }) => {
 
 /**
  * Spawns one bullet of a wave.
- * baseAngle is the bullet's even-spacing angle in the ring; startAngle is added on top of it.
+ * baseAngle is the bullet's offset from the emitter's direction.
  */
-export const spawnBullet = (bulletEmitter, { waveIndex, spawnTime }, { bulletIndex, bulletCount, baseAngle, rotates }) => {
+export const spawnBullet = (bulletEmitter, { waveIndex, spawnTime, origin = bulletEmitter.origin }, { bulletIndex, bulletCount, baseAngle, rotates }) => {
     const spawnSeconds = spawnTime / 1000;
     const { at } = createBulletContext({ waveIndex, bulletIndex, bulletCount, spawnSeconds });
 
-    // texture and startAngle are decided once, at spawn (age 0).
+    // texture and direction are decided once, at spawn (age 0).
     const texture = resolveValue(bulletEmitter.texture, at(0));
-    const startAngle = baseAngle + (Number(resolveValue(bulletEmitter.startAngle, at(0))) || 0);
+    const startAngle = baseAngle + directionAngle(resolveValue(bulletEmitter.direction, at(0)));
 
     const bullet = new Bullet(bulletEmitter.scene, {
-        origin: bulletEmitter.origin,
-        parent: bulletEmitter.origin,
+        origin,
+        parent: origin,
         followParent: bulletEmitter.followParent,
         timeSource: bulletEmitter.timeSource,
         spawnTime,
@@ -112,32 +118,42 @@ export const spawnBullet = (bulletEmitter, { waveIndex, spawnTime }, { bulletInd
         behavior: {
             ...orbitBehavior(bulletEmitter, at, { rotates }),
             startAngle
-        }
+        },
+        onAdvance: bulletEmitter.onBulletAdvance,
+        onSpawn: bulletEmitter.onBulletSpawn,
+        onDestroy: bulletEmitter.onBulletDestroy
     });
     bulletEmitter.bullets.add(bullet);
 }
 
 /** Fires a full ring of bullets spaced evenly around the origin. */
 export const emitRing = (bulletEmitter, wave, { rotates }) => {
-    const bulletCount = resolveProjectileCount(bulletEmitter, wave);
-    const spacing = calculateBurstSpacing(bulletCount);
-
-    for (let bulletIndex = 0; bulletIndex < bulletCount; bulletIndex++) {
-        spawnBullet(bulletEmitter, wave, {
-            bulletIndex,
-            bulletCount,
-            baseAngle: bulletIndex * spacing,
-            rotates
-        });
-    }
+    emitSpread(bulletEmitter, wave, {
+        bulletCount: resolveProjectileCount(bulletEmitter, wave), spread: 2 * Math.PI, rotates
+    });
 }
 
-/** Fires a single bullet straight down (startAngle steers it). */
+const emitSpread = (bulletEmitter, wave, { bulletCount, spread, rotates = false }) => {
+    const fullRing = Math.abs(spread) === 2 * Math.PI;
+    const spacing = bulletCount > 1 ? spread / (fullRing ? bulletCount : bulletCount - 1) : 0;
+    const firstAngle = fullRing || bulletCount <= 1 ? 0 : -spread / 2;
+    for (let bulletIndex = 0; bulletIndex < bulletCount; bulletIndex++) {
+        spawnBullet(bulletEmitter, wave, {
+            bulletIndex, bulletCount, baseAngle: firstAngle + bulletIndex * spacing, rotates
+        });
+    }
+};
+
+/** Centers a cone on direction; full circles omit the duplicate endpoint. */
+export const emitCone = (bulletEmitter, wave) => {
+    const bulletCount = resolveProjectileCount(bulletEmitter, wave);
+    const coneAngle = Number(resolveValue(bulletEmitter.coneAngle, {
+        waveIndex: wave.waveIndex, time: wave.spawnTime / 1000
+    })) || 0;
+    emitSpread(bulletEmitter, wave, { bulletCount, spread: coneAngle });
+};
+
+/** Fires a single bullet along direction. */
 export const emitLinear = (bulletEmitter, wave) => {
-    spawnBullet(bulletEmitter, wave, {
-        bulletIndex: 0,
-        bulletCount: 1,
-        baseAngle: Math.PI / 2,
-        rotates: false
-    });
+    emitSpread(bulletEmitter, wave, { bulletCount: 1, spread: 0 });
 }

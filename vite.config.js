@@ -6,7 +6,8 @@ export default defineConfig({
     rolldownOptions: {
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
-        playground: resolve(import.meta.dirname, 'playground.html')
+        playground: resolve(import.meta.dirname, 'playground.html'),
+        sandbox: resolve(import.meta.dirname, 'sandbox.html')
       }
     }
   }

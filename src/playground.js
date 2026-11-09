@@ -6,6 +6,7 @@ import { BULLET_TEXTURES } from './objects/definitions/bulletTextures.js';
 import { backOut, clamp, hsv, mix, palette, rgb } from './objects/utils/bulletUtils.js';
 import { FLAG_PALETTES } from './objects/definitions/flagPalettes.js';
 import PlaygroundAudio from './playgroundAudio.js';
+import { directionAngle } from './objects/utils/bulletEmitterUtils.js';
 
 const WIDTH = 540;
 const HEIGHT = 720;
@@ -88,8 +89,10 @@ const controls = [
   },
   { key: 'angularVelocity', label: 'Angular velocity (rad/s)', min: -10, max: 10, step: 0.05, patterns: ['orbit_burst'], ...PER_BULLET_LIVE },
   { key: 'spinVelocity', label: 'Spin velocity (rad/s)', min: -20, max: 20, step: 0.1, ...PER_BULLET_LIVE },
-  { key: 'startAngle', label: 'Start angle offset (rad)', min: -3.14, max: 3.14, step: 0.01, ...PER_BULLET },
-  { key: 'projectilesPerWave', label: 'Projectiles per wave', min: 1, max: 360, step: 1, patterns: ['orbit_burst', 'burst'], ...PER_WAVE },
+  { key: 'direction', label: 'Direction (radians or [x, y])', ...PER_BULLET,
+    hint: 'Cone center / ring first bullet. Radians or a non-zero vector, e.g. [0, -1] points up. Expressions may use waveIndex, bulletIndex, bulletCount and time.' },
+  { key: 'coneAngle', label: 'Cone total spread (rad)', min: 0, max: 6.28, step: 0.01, patterns: ['cone'], ...PER_WAVE },
+  { key: 'projectilesPerWave', label: 'Projectiles per wave', min: 1, max: 360, step: 1, patterns: ['orbit_burst', 'burst', 'cone'], ...PER_WAVE },
   {
     key: 'waveInterval',
     label: 'Wave interval (ms since previous wave)',
@@ -153,6 +156,10 @@ const parseControlValue = (control, text) => {
     ...helperNames,
     `"use strict"; return [${contextArrowSource(expression, `(${expression})`)}, ${contextArrowSource(expression, `Number(${expression}) || 0`)}];`
   )(...helpers);
+  if (control.key === 'direction') {
+    directionAngle(evaluate(control.sample));
+    return evaluate;
+  }
   if (!Number.isFinite(Number(evaluate(control.sample)))) {
     throw new Error('Expression must evaluate to a number.');
   }
@@ -305,21 +312,33 @@ const storeSavedPresets = (presets) => {
 
 const serializeSettings = () => {
   const result = { pattern: settings.pattern, texture: settings.texture, autoFire: settings.autoFire };
+  if (settings.childEmitter) result.childEmitter = settings.childEmitter;
   // Only tracks loaded from a URL can be saved; uploaded files have to be picked again.
   if (audio.url) result.audio = audio.url;
   for (const { control } of controlRows) {
     const text = sources[control.key];
     if (text === undefined || text === '') continue;
     const number = Number(text);
-    result[control.key] = Number.isFinite(number) && !control.color ? number : text;
+    result[control.key] = Number.isFinite(number) && !control.color ? number
+      : control.key === 'direction' && Array.isArray(settings.direction) ? settings.direction : text;
   }
   return result;
 };
 
 const applyPreset = (presetSettings) => {
   const merged = { ...DEFAULT_SETTINGS, ...presetSettings };
+  if (presetSettings.direction === undefined) {
+    const offset = presetSettings.pattern === 'linear' ? Math.PI / 2 : 0;
+    if (presetSettings.startAngle !== undefined) {
+      const spread = presetSettings.pattern === 'cone' ? Number(merged.coneAngle) / 2 : 0;
+      merged.direction = `(${presetSettings.startAngle}) + ${offset + spread}`;
+    } else {
+      merged.direction = offset;
+    }
+  }
 
   settings.pattern = merged.pattern;
+  settings.childEmitter = merged.childEmitter;
   patternSelect.value = merged.pattern;
   settings.texture = merged.texture in BULLET_TEXTURES ? merged.texture : DEFAULT_SETTINGS.texture;
   textureSelect.value = settings.texture;
@@ -327,7 +346,8 @@ const applyPreset = (presetSettings) => {
   autoFireInput.checked = settings.autoFire;
 
   const invalid = controlRows
-    .filter(({ control, setText }) => !setText(merged[control.key]))
+    .filter(({ control, setText }) => !setText(Array.isArray(merged[control.key])
+      ? JSON.stringify(merged[control.key]) : merged[control.key]))
     .map(({ control }) => control.key);
 
   updatePatternControls();
@@ -560,6 +580,7 @@ document.getElementById('audio-clear').addEventListener('click', () => {
 });
 
 waveCanvas.addEventListener('click', (event) => {
+  if (scrubber.hidden) return;
   const bounds = waveCanvas.getBoundingClientRect();
   const fraction = clamp((event.clientX - bounds.left) / bounds.width);
   audio.resume();

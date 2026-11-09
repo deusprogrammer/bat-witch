@@ -5,7 +5,10 @@ import { bulletEmitters } from './definitions/bulletEmitters';
 /**
  * Fires bullets in waves. A volley (activate()) is `waveCount` waves, `waveInterval` ms apart;
  * each wave fires `projectilesPerWave` bullets in the shape given by `pattern`
- * (see definitions/bulletEmitters.js: 'orbit_burst', 'burst' or 'linear').
+ * (see definitions/bulletEmitters.js: 'orbit_burst', 'burst', 'linear' or 'cone').
+ * origin: object with x/y from which bullets fire.
+ * followParent: false (default) captures origin's x/y once per activation for all its waves.
+ *   true keeps emitted bullets moving relative to the live origin in both axes.
  *
  * Almost every option can be a plain value or a function. Functions receive one context object;
  * destructure the fields you need:
@@ -25,7 +28,8 @@ import { bulletEmitters } from './definitions/bulletEmitters';
  * Decided once, when the wave or bullet spawns (time = spawn time, age = 0):
  *   waveInterval({ waveIndex, time })        ms since the previous wave (time = the previous wave's time)
  *   projectilesPerWave({ waveIndex, time })  bullets in the wave
- *   startAngle(context)                      radians, added to the even spacing around the ring
+ *   direction(context)                       radians or non-zero [x, y]; cone center / ring's first bullet
+ *   coneAngle({ waveIndex, time })            total cone spread in radians, centered on direction
  *   texture(context)                         texture key (see definitions/bulletTextures.js)
  *
  * Re-evaluated every frame while the bullet flies (time = now). Rates are integrated over the
@@ -49,7 +53,8 @@ export default class BulletEmitter extends Phaser.GameObjects.GameObject {
         outwardVelocity,
         angularVelocity = 0.5,
         spinVelocity = 0,
-        startAngle = 0,
+        direction,
+        coneAngle = 0.4,
         waveCount = 1,
         waveInterval = 250,
         projectilesPerWave,
@@ -58,6 +63,9 @@ export default class BulletEmitter extends Phaser.GameObjects.GameObject {
         texture = 'bullet',
         color,
         size = 32,
+        onBulletSpawn = () => {},
+        onBulletAdvance = () => {},
+        onBulletDestroy = () => {},
         timeSource = scene.time
     }) {
         super(scene, origin.x, origin.y);
@@ -73,7 +81,8 @@ export default class BulletEmitter extends Phaser.GameObjects.GameObject {
         this.outwardVelocity = outwardVelocity;
         this.angularVelocity = angularVelocity;
         this.spinVelocity = spinVelocity;
-        this.startAngle = startAngle;
+        this.direction = direction ?? (pattern === 'linear' ? Math.PI / 2 : 0);
+        this.coneAngle = coneAngle;
         this.waveCount = waveCount;
         this.waveInterval = waveInterval;
         this.projectilesPerWave = projectilesPerWave;
@@ -81,6 +90,9 @@ export default class BulletEmitter extends Phaser.GameObjects.GameObject {
         this.texture = texture;
         this.color = color;
         this.size = size;
+        this.onBulletSpawn = onBulletSpawn;
+        this.onBulletAdvance = onBulletAdvance;
+        this.onBulletDestroy = onBulletDestroy;
         // Anything with a `now` property in ms; bullets measure their age against it.
         this.timeSource = timeSource;
     }
@@ -104,18 +116,19 @@ export default class BulletEmitter extends Phaser.GameObjects.GameObject {
 
     /** Fires one volley: the first wave now, the rest on the scene clock per getWaveSchedule(). */
     activate() {
+        const origin = this.followParent ? this.origin : {x: this.origin.x, y: this.origin.y};
         for (const { waveIndex, delay } of this.getWaveSchedule()) {
             if (delay === 0) {
-                this.emitWave(waveIndex);
+                this.emitWave(waveIndex, this.timeSource.now, origin);
             } else {
-                this.scene.time.delayedCall(delay, () => this.emitWave(waveIndex));
+                this.scene.time.delayedCall(delay, () => this.emitWave(waveIndex, this.timeSource.now, origin));
             }
         }
     }
 
-    /** Fires a single wave using this emitter's pattern. spawnTime: emitter clock (ms). */
-    emitWave(waveIndex = 0, spawnTime = this.timeSource.now) {
-        bulletEmitters[this.pattern] && bulletEmitters[this.pattern](this, { waveIndex, spawnTime });
+    /** Fires a single wave. spawnTime: emitter clock (ms); origin can be a volley's captured position. */
+    emitWave(waveIndex = 0, spawnTime = this.timeSource.now, origin = this.origin) {
+        bulletEmitters[this.pattern] && bulletEmitters[this.pattern](this, { waveIndex, spawnTime, origin });
     }
 
     update(time) {
