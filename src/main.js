@@ -13,6 +13,9 @@ const config = {
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   backgroundColor: '#0a0a1a',
+  input: {
+    gamepad: true,
+  },
   physics: {
     default: 'arcade',
     arcade: {

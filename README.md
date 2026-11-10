@@ -56,9 +56,12 @@ Use **Return to Title Screen** from the level editor to leave.
 
 ### Main game controls and combat
 
-Click **Start Game** on the title screen (or press Enter) to begin. Click **Playground** to
+Click **Start Game** on the title screen (or press Enter) to begin. Use a controller's D-pad
+to navigate the title menu and A to select; press A on the victory or game-over screen to return
+to the title. Click **Playground** to
 open the pattern playground; its **Return to Title Screen** button is above the preview.
-Move with the arrow keys. Each Space press fires a
+Move with the arrow keys or a controller's D-pad. Shoot with Space or the controller's A button.
+Each shooting press fires a
 volley of five nine-shot cones, 10 ms apart; hold it for 200 ms to start the focused stream,
 which stops on release.
 The cone and focused stream use separate emitters; repeated taps fire repeated cones.

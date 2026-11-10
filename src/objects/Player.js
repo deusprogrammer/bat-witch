@@ -19,6 +19,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     this.shootingSpeed = 220;
     this.cursors = scene.input.keyboard.createCursorKeys();
     this.spacebar = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this.shootingInputDown = false;
 
     this.createAnimations();
     this.lastBullet = null;
@@ -41,12 +42,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       followParent: true
     });
     this.bulletEmitters = [this.coneEmitter, this.focusedEmitter];
-    this.spacebar.on('down', this.beginShooting, this);
-    this.spacebar.on('up', this.stopShooting, this);
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.spacebar.off('down', this.beginShooting, this);
-      this.spacebar.off('up', this.stopShooting, this);
-    });
     this.play('player-forward');
     this.hitboxRadius = 5;
     const radius = this.hitboxRadius / this.scaleX;
@@ -80,12 +75,26 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
   update(time) {
     if (this.isDying || !this.active) return;
-    const { left, right, up, down } = this.cursors;
+    const gamepad = this.scene.input.gamepad?.pad1;
+    const left = this.cursors.left.isDown || gamepad?.left || false;
+    const right = this.cursors.right.isDown || gamepad?.right || false;
+    const up = this.cursors.up.isDown || gamepad?.up || false;
+    const down = this.cursors.down.isDown || gamepad?.down || false;
+    const shooting = this.spacebar.isDown || Boolean(gamepad?.connected && gamepad.A);
+
+    if (shooting !== this.shootingInputDown) {
+      this.shootingInputDown = shooting;
+      if (shooting) {
+        this.beginShooting();
+      } else {
+        this.stopShooting();
+      }
+    }
 
     const move = new Phaser.Math.Vector2(
-      right.isDown - left.isDown,
-      down.isDown - up.isDown
-    ).normalize().scale(this.spacebar.isDown ? this.shootingSpeed : this.speed);
+      right - left,
+      down - up
+    ).normalize().scale(this.shootingInputDown ? this.shootingSpeed : this.speed);
 
     this.setVelocity(move.x, move.y);
 
@@ -97,7 +106,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       this.flyStraight();
     }
 
-    if (this.spacebar.isDown && this.shotPressedAt !== null
+    if (this.shootingInputDown && this.shotPressedAt !== null
       && time - this.shotPressedAt >= FOCUS_HOLD_DELAY) {
       if (this.lastBullet === null) {
         this.lastBullet = this.shotPressedAt + FOCUS_HOLD_DELAY - BULLET_COOLDOWN;
@@ -134,6 +143,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   stopShooting() {
+    this.shootingInputDown = false;
     this.shotPressedAt = null;
     this.lastBullet = null;
   }

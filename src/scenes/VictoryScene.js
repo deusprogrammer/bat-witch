@@ -14,7 +14,7 @@ export default class VictoryScene extends Phaser.Scene {
     const background = this.add.image(width / 2, height / 2, 'victory-screen');
     background.setScale(Math.min(width / background.width, height / background.height));
 
-    this.add.text(width / 2, height - 24, 'Press Enter to Continue', {
+    this.add.text(width / 2, height - 24, 'Press Enter or A to Continue', {
       fontFamily: 'monospace',
       fontSize: '28px',
       color: '#ffffff',
@@ -22,10 +22,21 @@ export default class VictoryScene extends Phaser.Scene {
       strokeThickness: 8
     }).setOrigin(0.5, 1);
 
+    const connectedPad = this.input.gamepad?.getAll().find(pad => pad.connected);
+    this.previousControllerConfirm = connectedPad?.A ?? false;
     this.input.keyboard.once('keydown-ENTER', this.returnToTitle, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.keyboard.off('keydown-ENTER', this.returnToTitle, this);
     });
+  }
+
+  update() {
+    const gamepad = this.input.gamepad?.getAll().find(pad => pad.connected);
+    const confirm = Boolean(gamepad?.A);
+    if (confirm && !this.previousControllerConfirm) {
+      this.returnToTitle();
+    }
+    this.previousControllerConfirm = confirm;
   }
 
   returnToTitle() {
