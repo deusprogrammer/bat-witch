@@ -134,15 +134,34 @@
 
       .preview {
         --timeline-height: 46px;
+        --navigation-height: 40px;
         flex: 0 1 auto;
         display: flex;
         flex-direction: column;
         gap: 8px;
-        /* Fit the 540x720 canvas plus the timeline inside the viewport. */
-        width: min(540px, calc((100dvh - 48px - 8px - var(--timeline-height)) * 0.75));
+        /* Fit the canvas, navigation and timeline inside the viewport. */
+        width: min(540px, calc((100dvh - 48px - 16px - var(--timeline-height) - var(--navigation-height)) * 0.75));
         min-width: 240px;
         position: sticky;
         top: 24px;
+      }
+
+      .return-to-title {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: var(--navigation-height);
+        color: inherit;
+        background: #23305f;
+        border: 1px solid #343d63;
+        border-radius: 4px;
+        text-decoration: none;
+      }
+
+      .return-to-title:hover,
+      .return-to-title:focus-visible {
+        background: #30407a;
       }
 
       #game {
@@ -312,6 +331,7 @@
   </head>
   <body>
     <main class="preview">
+      <a class="return-to-title" href="./index.html">Return to Title Screen</a>
       <div id="game"></div>
       <div class="timeline lock-during-export">
         <button id="play-pause" type="button" aria-pressed="true" aria-label="Pause" title="Pause">❚❚</button>

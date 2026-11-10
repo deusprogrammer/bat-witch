@@ -18,12 +18,47 @@ Then open:
 
 - `http://localhost:5173/` for the game
 - `http://localhost:5173/playground.html` for the pattern playground
+- `http://localhost:5173/level-editor.html` for the level editor (also available from the title screen)
 
 `npm run build` writes a production build to `dist/`, and `npm run preview` serves it.
 
+### Level Editor
+
+The level editor displays a width-fitted background in a scrollable 540 x 941 Phaser viewport,
+initially at the bottom, just like gameplay. It defaults to `assets/background.png` and
+15 px/sec. Load a different image using the right-side control (replacing it clears encounters
+after confirmation). Wheel-scroll over the canvas or use the position slider.
+The readout shows timestamps for both viewport edges, measured upward from the image bottom.
+
+Click the image to create a full-width, 20 px-tall encounter outline. Drag its middle to move it
+vertically, or drag its top/bottom edge to resize it. The list supports labels, deletion,
+selection (which reveals the rectangle), and **Edit Encounter** to open its node editor.
+**Back to Level Editor** preserves edits. Changing the positive scroll rate keeps rectangles
+in place and recalculates their times.
+
+**Download Level JSON** saves `{ scrollRate, background, encounters }` in `level.json`.
+`background` is a path (the default) or an uploaded filename, not embedded image data.
+Each encounter contains `{ number, label, startTime, endTime, nodes }`: its bottom edge
+defines `startTime`, its top defines `endTime`, in seconds at the chosen width-scaled px/sec.
+The image bottom is time zero. Image files must be kept alongside the exported data separately.
+
+### Encounter Editor
+
+The React controls and Phaser canvas let you place nodes in the game's 540 x 941 play area.
+Click empty canvas space to add a numbered, 20 px-diameter circle and an editable label
+(`node1`, `node2`, etc.) in the list on the right. Coordinates use the top-left as `(0, 0)`,
+regardless of the canvas's displayed size. Click a circle to highlight and reveal its list entry.
+Each entry has a Delete button; surviving nodes keep their original numbers.
+**Download JSON** saves `nodes.json`, an array of `{ number, label, x, y }` objects.
+Level and encounter edits exist only for the current page visit; download the level to keep them.
+These tools do not yet implement enemy movement or level playback/import.
+Use **Return to Title Screen** from the level editor to leave.
+
 ### Main game controls and combat
 
-Press Enter on the start screen to begin. Move with the arrow keys. Each Space press fires a
+Click **Start Game** on the title screen (or press Enter) to begin. Click **Playground** to
+open the pattern playground; its **Return to Title Screen** button is above the preview.
+Move with the arrow keys. Each Space press fires a
 volley of five nine-shot cones, 10 ms apart; hold it for 200 ms to start the focused stream,
 which stops on release.
 The cone and focused stream use separate emitters; repeated taps fire repeated cones.
