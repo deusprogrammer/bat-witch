@@ -144,6 +144,25 @@ The emitter's `startAngle` option is replaced by `direction`; the internal Bulle
 still stores its resolved angle as `startAngle`. Older saved playground presets are translated
 when loaded so their trajectories stay the same.
 
+Set `alignToDirection: true` to rotate each bullet's artwork to its own launch angle,
+including its individual ring/cone spread. Add `startRotation` (radians, default `0`) to
+correct the artwork's native orientation, or use it alone as a fixed initial rotation:
+
+```js
+texture: 'heart-bullet',
+alignToDirection: true,
+startRotation: -Math.PI / 2 // the heart's point faces down in the source image
+```
+
+Alignment follows changes in the bullet's orbital angle: a bullet launched at 45 degrees that
+orbits to 90 degrees also turns its artwork by 45 degrees, preserving the correction offset.
+This keeps the sprite facing radially, not along the tangent of its curved path.
+`spinVelocity` adds extra spin on top of that alignment. Neither setting changes movement.
+Both are available in the playground, saved/copied presets, and AI generation/editing.
+Try the **Point-first hearts** preset for expanding rings of hearts with their tips facing outward.
+Old presets keep alignment off and initial rotation at zero.
+Rotated or spinning bullets use centered circular hitboxes because Arcade hitboxes cannot rotate.
+
 Set `followParent` on the emitter to choose how emitted bullets use its `origin`:
 
 - `false` (default): `activate()` captures the origin's x/y once. Every wave in that volley fires
@@ -185,6 +204,7 @@ velocity: ({ waveIndex, bulletIndex, bulletCount }) => 110 + 45 * Math.cos(bulle
 | `projectilesPerWave` | `{ waveIndex, time }`    | bullets in the wave |
 | `direction`          | full context             | radians or non-zero `[x, y]`; cone center / ring's first bullet |
 | `texture`            | full context             | texture key (see `definitions/bulletTextures.js`) |
+| `startRotation`      | full context             | initial sprite rotation offset in radians, before spin |
 
 **Re-evaluated every frame** while the bullet flies (`time` and `age` keep moving):
 
@@ -453,6 +473,37 @@ In game code you can also build the waveform from Phaser's cache:
   Child configuration is preserved when saving or copying a preset; there are no child-emitter
   controls yet. Selecting a regular preset removes the child effect.
 - **Audio**: upload an MP3/WAV, or pick a music preset. The timeline then follows the song.
+- **Create with AI** / **Edit with AI**: open a text modal to describe a new pattern or changes.
+  The playground sends the prompt and a JSON schema directly to `http://localhost:11434/api/chat`
+  using local Ollama model `gpt-oss:20b`. Nothing is sent to a cloud AI service.
+  Validated settings replace the live preview and rewind it; saved presets are unchanged unless
+  you click **Save**. **Undo AI change** restores settings from before the last successful generation.
+  Click **Edit with AI** to include the latest editable preview settings
+  (including manual edits) and ask for targeted changes, such as "make this blue" or "slow it down".
+  Unrelated values should be preserved. **Create with AI** generates a fresh pattern without
+  sending the current settings. Each mode keeps its own draft prompt during this page visit;
+  no conversation history is sent, only the current settings when modification is enabled.
+  Closing the modal or pressing Escape cancels an in-flight request. Errors leave settings unchanged.
+  Generation covers the editable top-level settings, not nested child emitters or audio loading;
+  generated patterns clear child effects and keep the loaded track.
+  Generated expressions are limited to arithmetic, context variables, and supported math/color
+  helpers, with bounded numeric controls and a 4,000-bullet-per-volley limit.
+  Invalid model output is sent back for one correction attempt before reporting an error.
+  Requests set Ollama's context window to 16,384 tokens. The system prompt prioritizes the requested
+  geometry over the current settings, with worked examples of streams, fans, sweeps, rings,
+  diagonal lanes, spirals, flowers, and music-reactive patterns rather than a radial default.
+  To test locally, install/pull the model with `ollama pull gpt-oss:20b` and run Ollama.
+  Serve the playground with `npm run dev`. If browser requests are blocked by CORS, quit the
+  existing Ollama process/app, then start it from PowerShell with the exact page origin allowed:
+
+  ```powershell
+  $env:OLLAMA_ORIGINS = "http://localhost:5173"
+  ollama serve
+  ```
+
+  Use the actual origin if Vite chose another port or you use `127.0.0.1`. A deployed HTTPS page
+  may require additional browser permission to access localhost; local Vite is the test target.
+  Run AI validation/request tests with `node --test tests\playgroundAI.test.js`.
 - **Timeline**: play, pause and loop. Scrubbing controls are temporarily hidden, and clicking
   the audio waveform no longer seeks. The underlying rebuild path remains for resets and export.
   Child bullets share the timeline clock, pause with playback, and are cleared on reset.

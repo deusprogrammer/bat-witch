@@ -31,6 +31,9 @@ import { bulletEmitters } from './definitions/bulletEmitters';
  *   direction(context)                       radians or non-zero [x, y]; cone center / ring's first bullet
  *   coneAngle({ waveIndex, time })            total cone spread in radians, centered on direction
  *   texture(context)                         texture key (see definitions/bulletTextures.js)
+ *   startRotation(context)                   initial sprite rotation offset in radians (default 0)
+ *   alignToDirection                         true aligns artwork to launch angle and follows orbital turns
+ *                                            while preserving startRotation and additional spin
  *
  * Re-evaluated every frame while the bullet flies (time = now). Rates are integrated over the
  * bullet's life, so changes speed bullets up or turn them rather than teleporting them:
@@ -53,6 +56,8 @@ export default class BulletEmitter extends Phaser.GameObjects.GameObject {
         outwardVelocity,
         angularVelocity = 0.5,
         spinVelocity = 0,
+        alignToDirection = false,
+        startRotation = 0,
         direction,
         coneAngle = 0.4,
         waveCount = 1,
@@ -81,6 +86,8 @@ export default class BulletEmitter extends Phaser.GameObjects.GameObject {
         this.outwardVelocity = outwardVelocity;
         this.angularVelocity = angularVelocity;
         this.spinVelocity = spinVelocity;
+        this.alignToDirection = alignToDirection;
+        this.startRotation = startRotation;
         this.direction = direction ?? (pattern === 'linear' ? Math.PI / 2 : 0);
         this.coneAngle = coneAngle;
         this.waveCount = waveCount;

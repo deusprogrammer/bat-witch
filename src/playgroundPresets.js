@@ -8,6 +8,8 @@ export const DEFAULT_SETTINGS = {
   size: 32,
   angularVelocity: 0.5,
   spinVelocity: 0,
+  alignToDirection: false,
+  startRotation: 0,
   direction: 0,
   coneAngle: 0.4,
   projectilesPerWave: 90,
@@ -73,6 +75,26 @@ export const BUILT_IN_PRESETS = [
   {
     name: 'Default spiral',
     settings: {}
+  },
+  {
+    name: 'Point-first hearts',
+    settings: {
+      pattern: 'burst',
+      texture: 'heart-bullet',
+      alignToDirection: true,
+      startRotation: '-Math.PI / 2',
+      velocity: 120,
+      angularVelocity: 0,
+      spinVelocity: 0,
+      direction: 'waveIndex * Math.PI / 24',
+      projectilesPerWave: 16,
+      waveInterval: 350,
+      waveCount: 4,
+      fireCooldown: 2500,
+      originY: 360,
+      size: 28,
+      color: 'waveIndex % 2 ? 0xff88bb : 0xff4466'
+    }
   },
   {
     name: 'Galaxy arms',

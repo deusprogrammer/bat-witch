@@ -79,6 +79,7 @@
 
       input,
       select,
+      textarea,
       button {
         font: inherit;
         color: inherit;
@@ -327,6 +328,36 @@
       #audio-status.error-text {
         color: #ff5c7a;
       }
+
+      #ai-dialog {
+        box-sizing: border-box;
+        width: min(560px, calc(100vw - 32px));
+        color: #d8e2f0;
+        background: #11152a;
+        border: 1px solid #343d63;
+        border-radius: 8px;
+        padding: 24px;
+      }
+
+      #ai-dialog::backdrop {
+        background: rgb(0 0 0 / 75%);
+      }
+
+      #ai-form {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      #ai-dialog h2,
+      #ai-dialog p {
+        margin: 0;
+      }
+
+      #ai-prompt {
+        resize: vertical;
+        min-height: 120px;
+      }
     </style>
   </head>
   <body>
@@ -365,6 +396,13 @@
           <button id="copy-json" type="button">Copy JSON</button>
         </div>
         <span id="preset-status" class="hint" role="status"></span>
+        <div class="buttons">
+          <button id="open-ai" type="button">Create with AI</button>
+          <button id="edit-ai" type="button">Edit with AI</button>
+        </div>
+        <div class="buttons">
+          <button id="undo-ai" type="button" disabled>Undo AI change</button>
+        </div>
       </section>
 
       <details class="export">
@@ -454,6 +492,11 @@
         <div id="numeric-controls"></div>
 
         <label class="control checkbox">
+          <input id="align-to-direction" type="checkbox" />
+          <span>Align bullets to direction (follow orbital turns)</span>
+        </label>
+
+        <label class="control checkbox">
           <input id="auto-fire" type="checkbox" />
           <span>Auto fire</span>
         </label>
@@ -464,6 +507,25 @@
         </div>
       </div>
     </aside>
+    <dialog id="ai-dialog" aria-labelledby="ai-title" aria-describedby="ai-description">
+      <form id="ai-form">
+        <h2 id="ai-title">Create a bullet pattern</h2>
+        <p id="ai-description" class="hint">
+          Uses gpt-oss:20b on your local Ollama server (localhost:11434).
+          Applies temporary settings to the preview, not a saved preset. Undo restores the previous settings.
+        </p>
+        <label class="control">
+          <span id="ai-prompt-label">Describe your pattern</span>
+          <textarea id="ai-prompt" maxlength="4000" required placeholder="A rotating five-petal flower of pink hearts, with alternating blue rings" autofocus></textarea>
+        </label>
+        <span id="ai-mode-hint" class="hint">Creates a fresh pattern without using the current settings.</span>
+        <span id="ai-status" class="hint" role="status" aria-live="polite"></span>
+        <div class="buttons">
+          <button id="ai-generate" type="submit">Generate and preview</button>
+          <button id="ai-close" type="button">Close</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="/src/playground.js"></script>
   </body>
 </html>

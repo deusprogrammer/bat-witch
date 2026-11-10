@@ -22,6 +22,8 @@ export default class Bullet extends Phaser.Physics.Arcade.Sprite {
      *   Movement dispatch for function behaviors is not implemented yet.
      * behavior.spinVelocity: rad/s the sprite rotates about its own center (any behavior type),
      *   or spinVelocity(age), integrated over the bullet's life.
+     * behavior.startRotation: initial sprite rotation in radians, before any spin.
+     * behavior.alignToDirection: add changes in orbital angle to the initial rotation.
      * `age` is always seconds since spawnTime.
      */
     constructor(scene, {
@@ -70,8 +72,8 @@ export default class Bullet extends Phaser.Physics.Arcade.Sprite {
 
         scene.add.existing(this);
         scene.physics.add.existing(this);
-        if (this.initialState.spinVelocity) {
-            // Arcade bodies are axis-aligned and can't rotate, so spinning bullets get a
+        if (this.initialState.alignToDirection || this.initialState.spinVelocity || this.initialState.startRotation) {
+            // Arcade bodies are axis-aligned and can't rotate, so rotated bullets get a
             // centered circle hitbox, which covers the same area at every angle.
             const radius = Math.min(this.width, this.height) / 2;
             this.body.setCircle(radius, this.width / 2 - radius, this.height / 2 - radius);
@@ -102,12 +104,13 @@ export default class Bullet extends Phaser.Physics.Arcade.Sprite {
     }
 
     applySpin(age) {
-        const {spinVelocity = 0, startRotation = 0} = this.initialState;
+        const {spinVelocity = 0, startRotation = 0, startAngle = 0, alignToDirection = false} = this.initialState;
+        const rotation = startRotation + (alignToDirection ? this.state.orbitAngle - startAngle : 0);
         
         if (typeof spinVelocity === 'function') {
-            this.rotation = startRotation + integrateOverAge((a) => Number(spinVelocity(a)) || 0, age, this.state.spinIntegral);
-        } else if (spinVelocity) {
-            this.rotation = startRotation + spinVelocity * age;
+            this.rotation = rotation + integrateOverAge((a) => Number(spinVelocity(a)) || 0, age, this.state.spinIntegral);
+        } else if (alignToDirection || spinVelocity || startRotation) {
+            this.rotation = rotation + spinVelocity * age;
         }
     }
 

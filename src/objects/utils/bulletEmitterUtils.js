@@ -101,9 +101,11 @@ export const spawnBullet = (bulletEmitter, { waveIndex, spawnTime, origin = bull
     const spawnSeconds = spawnTime / 1000;
     const { at } = createBulletContext({ waveIndex, bulletIndex, bulletCount, spawnSeconds });
 
-    // texture and direction are decided once, at spawn (age 0).
+    // Texture, launch angle and initial sprite rotation are fixed at spawn.
     const texture = resolveValue(bulletEmitter.texture, at(0));
     const startAngle = baseAngle + directionAngle(resolveValue(bulletEmitter.direction, at(0)));
+    const startRotation = (bulletEmitter.alignToDirection ? startAngle : 0)
+        + resolveValue(bulletEmitter.startRotation ?? 0, at(0));
 
     const bullet = new Bullet(bulletEmitter.scene, {
         origin,
@@ -117,7 +119,9 @@ export const spawnBullet = (bulletEmitter, { waveIndex, spawnTime, origin = bull
         size: valueOverAge(bulletEmitter.size, at),
         behavior: {
             ...orbitBehavior(bulletEmitter, at, { rotates }),
-            startAngle
+            startAngle,
+            startRotation,
+            alignToDirection: bulletEmitter.alignToDirection
         },
         onAdvance: bulletEmitter.onBulletAdvance,
         onSpawn: bulletEmitter.onBulletSpawn,

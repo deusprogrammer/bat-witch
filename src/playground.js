@@ -7,6 +7,7 @@ import { backOut, clamp, hsv, mix, palette, rgb } from './objects/utils/bulletUt
 import { FLAG_PALETTES } from './objects/definitions/flagPalettes.js';
 import PlaygroundAudio from './playgroundAudio.js';
 import { directionAngle } from './objects/utils/bulletEmitterUtils.js';
+import { createPatternSchema, generatePattern, validateGeneratedPattern } from './playgroundAI.js';
 
 const WIDTH = 540;
 const HEIGHT = 720;
@@ -89,6 +90,8 @@ const controls = [
   },
   { key: 'angularVelocity', label: 'Angular velocity (rad/s)', min: -10, max: 10, step: 0.05, patterns: ['orbit_burst'], ...PER_BULLET_LIVE },
   { key: 'spinVelocity', label: 'Spin velocity (rad/s)', min: -20, max: 20, step: 0.1, ...PER_BULLET_LIVE },
+  { key: 'startRotation', label: 'Initial rotation offset (rad)', min: -6.28, max: 6.28, step: 0.01, ...PER_BULLET,
+    hint: 'Applied once at spawn, before spin. With alignment enabled, added to each bullet angle and follows orbital turns. For a downward-pointing heart, use -Math.PI / 2.' },
   { key: 'direction', label: 'Direction (radians or [x, y])', ...PER_BULLET,
     hint: 'Cone center / ring first bullet. Radians or a non-zero vector, e.g. [0, -1] points up. Expressions may use waveIndex, bulletIndex, bulletCount and time.' },
   { key: 'coneAngle', label: 'Cone total spread (rad)', min: 0, max: 6.28, step: 0.01, patterns: ['cone'], ...PER_WAVE },
@@ -251,6 +254,7 @@ for (const control of controls) {
 const patternSelect = document.getElementById('pattern');
 const textureSelect = document.getElementById('texture');
 const autoFireInput = document.getElementById('auto-fire');
+const alignToDirectionInput = document.getElementById('align-to-direction');
 
 for (const key of Object.keys(BULLET_TEXTURES)) {
   const option = document.createElement('option');
@@ -283,6 +287,11 @@ autoFireInput.addEventListener('change', () => {
   settingsChanged();
 });
 
+alignToDirectionInput.addEventListener('change', () => {
+  settings.alignToDirection = alignToDirectionInput.checked;
+  settingsChanged();
+});
+
 // ---- Presets ----
 
 const presetSelect = document.getElementById('preset');
@@ -311,7 +320,10 @@ const storeSavedPresets = (presets) => {
 };
 
 const serializeSettings = () => {
-  const result = { pattern: settings.pattern, texture: settings.texture, autoFire: settings.autoFire };
+  const result = {
+    pattern: settings.pattern, texture: settings.texture, autoFire: settings.autoFire,
+    alignToDirection: settings.alignToDirection
+  };
   if (settings.childEmitter) result.childEmitter = settings.childEmitter;
   // Only tracks loaded from a URL can be saved; uploaded files have to be picked again.
   if (audio.url) result.audio = audio.url;
@@ -344,6 +356,8 @@ const applyPreset = (presetSettings) => {
   textureSelect.value = settings.texture;
   settings.autoFire = Boolean(merged.autoFire);
   autoFireInput.checked = settings.autoFire;
+  settings.alignToDirection = Boolean(merged.alignToDirection);
+  alignToDirectionInput.checked = settings.alignToDirection;
 
   const invalid = controlRows
     .filter(({ control, setText }) => !setText(Array.isArray(merged[control.key])
@@ -356,6 +370,109 @@ const applyPreset = (presetSettings) => {
   if (merged.audio && merged.audio !== audio.url) loadTrack(merged.audio);
   return invalid;
 };
+
+// ---- Local AI pattern generation ----
+
+const aiDialog = document.getElementById('ai-dialog');
+const aiForm = document.getElementById('ai-form');
+const aiPrompt = document.getElementById('ai-prompt');
+const aiStatus = document.getElementById('ai-status');
+const aiGenerate = document.getElementById('ai-generate');
+const aiClose = document.getElementById('ai-close');
+const undoAI = document.getElementById('undo-ai');
+const aiSchema = createPatternSchema(controls, Object.keys(BULLET_TEXTURES));
+let aiAbort = null;
+let beforeAI = null;
+let aiModifyCurrent = false;
+let aiCreatePrompt = '';
+let aiEditPrompt = '';
+
+const showAIStatus = (message, isError = false) => {
+  aiStatus.textContent = message;
+  aiStatus.classList.toggle('error', isError);
+};
+
+const openAIDialog = (modifyCurrent) => {
+  if (aiAbort) return;
+  if (aiModifyCurrent) aiEditPrompt = aiPrompt.value;
+  else aiCreatePrompt = aiPrompt.value;
+  aiModifyCurrent = modifyCurrent;
+  aiPrompt.value = modifyCurrent ? aiEditPrompt : aiCreatePrompt;
+  document.getElementById('ai-title').textContent = modifyCurrent ? 'Edit current bullet pattern' : 'Create a bullet pattern';
+  document.getElementById('ai-prompt-label').textContent = modifyCurrent ? 'Describe your changes' : 'Describe your pattern';
+  document.getElementById('ai-mode-hint').textContent = modifyCurrent
+    ? 'Uses the latest preview settings, including manual edits. Unrelated values should be preserved.'
+    : 'Creates a fresh pattern without using the current settings.';
+  aiPrompt.placeholder = modifyCurrent
+    ? 'Make the bullets blue and slow them down'
+    : 'A downward fan of blue bullets sweeping left and right';
+  aiGenerate.textContent = modifyCurrent ? 'Apply changes and preview' : 'Generate and preview';
+  showAIStatus('');
+  aiDialog.showModal();
+  aiPrompt.focus();
+};
+document.getElementById('open-ai').addEventListener('click', () => openAIDialog(false));
+document.getElementById('edit-ai').addEventListener('click', () => openAIDialog(true));
+aiClose.addEventListener('click', () => aiDialog.close());
+aiDialog.addEventListener('close', () => aiAbort?.abort());
+
+aiForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (aiAbort) return;
+  const prompt = aiPrompt.value.trim();
+  if (!prompt) {
+    showAIStatus(aiModifyCurrent ? 'Describe the changes you want to make.' : 'Describe the pattern you want to create.', true);
+    aiPrompt.focus();
+    return;
+  }
+  aiAbort = new AbortController();
+  aiGenerate.disabled = true;
+  aiPrompt.disabled = true;
+  aiClose.textContent = 'Cancel';
+  aiForm.setAttribute('aria-busy', 'true');
+  showAIStatus('Generating with gpt-oss:20b locally. This may take a few minutes...');
+  try {
+    const generated = await generatePattern({
+      prompt, currentSettings: serializeSettings(), schema: aiSchema, signal: aiAbort.signal,
+      modifyCurrent: aiModifyCurrent,
+      validate: value => validateGeneratedPattern(value, aiSchema, (key, fieldValue) => {
+        parseControlValue(controls.find(control => control.key === key), fieldValue);
+      })
+    });
+    if (aiAbort.signal.aborted || !aiDialog.open) return;
+    const previousSettings = serializeSettings();
+    const invalid = applyPreset(generated);
+    if (invalid.length) {
+      applyPreset(previousSettings);
+      throw new Error(`Invalid generated fields: ${invalid.join(', ')}`);
+    }
+    beforeAI = previousSettings;
+    undoAI.disabled = false;
+    withScene(scene => scene.reset());
+    showStatus('AI pattern applied temporarily. Use Undo AI change to restore it, or Save to keep it.');
+    aiDialog.close();
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      console.error(error);
+      showAIStatus(`Generation failed: ${error.message}`, true);
+    }
+  } finally {
+    aiAbort = null;
+    aiGenerate.disabled = false;
+    aiPrompt.disabled = false;
+    aiClose.textContent = 'Close';
+    aiForm.removeAttribute('aria-busy');
+  }
+});
+
+undoAI.addEventListener('click', () => {
+  if (!beforeAI) return;
+  applyPreset(beforeAI);
+  beforeAI = null;
+  undoAI.disabled = true;
+  withScene(scene => scene.reset());
+  showStatus('Restored settings from before the last AI change.');
+});
 
 const renderPresetOptions = (selectedValue = presetSelect.value) => {
   const saved = loadSavedPresets();

@@ -62,9 +62,9 @@ export default class PlaygroundScene extends Phaser.Scene {
 
   emitterOptions() {
     const {
-      pattern, velocity, outwardVelocity, angularVelocity, spinVelocity, direction, coneAngle, projectilesPerWave, waveCount, waveInterval, color, size, texture
+      pattern, velocity, outwardVelocity, angularVelocity, spinVelocity, alignToDirection, startRotation, direction, coneAngle, projectilesPerWave, waveCount, waveInterval, color, size, texture
     } = this.settings;
-    return { pattern, velocity, outwardVelocity, angularVelocity, spinVelocity, direction, coneAngle, projectilesPerWave, waveCount, waveInterval, color, size, texture };
+    return { pattern, velocity, outwardVelocity, angularVelocity, spinVelocity, alignToDirection, startRotation, direction, coneAngle, projectilesPerWave, waveCount, waveInterval, color, size, texture };
   }
 
   attachChildEmitter(parent) {
